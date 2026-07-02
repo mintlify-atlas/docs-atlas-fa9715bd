@@ -1,7 +1,7 @@
 ---
-title: "Install Traccar on Linux, Windows, or macOS"
+title: "Install Traccar GPS Server on Linux, Windows, or macOS"
 sidebarTitle: "Installation"
-description: "Download and install the Traccar server package on Linux, Windows, or macOS using the official installer. Includes service setup and first-run configuration."
+description: "Install the Traccar GPS tracking server on Linux, Windows, or macOS using the official installer. Covers systemd service setup and initial configuration."
 ---
 
 Traccar ships as a self-contained ZIP package that bundles a custom JRE built with `jlink` — you do not need to install Java separately on the target machine. The package contains the server JAR, the bundled runtime under `jre/`, the default configuration file at `conf/traccar.xml`, and (on Linux) a ready-to-use `systemd` service unit. Simply extract, configure, and start.
@@ -10,7 +10,7 @@ Traccar ships as a self-contained ZIP package that bundles a custom JRE built wi
 
 | Requirement | Minimum | Recommended |
 |---|---|---|
-| **Java** | Bundled (JRE 17+) | Bundled — no separate install needed |
+| **Java** | Bundled JRE | Bundled — no separate install needed |
 | **RAM** | 512 MB | 1 GB or more |
 | **Disk** | 200 MB (application) | 1 GB+ (application + data + logs) |
 | **OS** | Linux, Windows, macOS | Linux (production) |
@@ -119,17 +119,14 @@ Traccar ships as a self-contained ZIP package that bundles a custom JRE built wi
 
     Open **Services** (`services.msc`) to start, stop, or restart the `traccar` service through the GUI, or use the command line:
 
-    ```bash
-    # Start the service
+    ```batch
     net start traccar
-
-    # Stop the service
     net stop traccar
     ```
 
     You can also manage it from PowerShell (run as Administrator):
 
-    ```bash
+    ```powershell
     Start-Service traccar
     Stop-Service traccar
     Restart-Service traccar

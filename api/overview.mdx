@@ -1,5 +1,5 @@
 ---
-title: "Traccar REST API Overview and Getting Started"
+title: "Traccar REST API Overview: Resources and Endpoints"
 sidebarTitle: "Overview"
 description: "Traccar exposes a full REST API at /api. JSON responses, HTTP Basic Auth or token-based auth. Version 6.x endpoint reference with all resources."
 ---
@@ -10,7 +10,7 @@ The Traccar REST API provides programmatic access to all server functionality â€
 
 All API endpoints are rooted at:
 
-```
+```text
 http(s)://{host}:{port}/api
 ```
 
@@ -131,7 +131,7 @@ Error responses return an empty body (`{}`). Use the HTTP status code to determi
 
 ## Demo Servers
 
-Traccar maintains four public demo servers you can use for development and testing without installing your own instance.
+Traccar maintains four public demo servers and one subscription server you can use for development and testing without installing your own instance.
 
 <CardGroup cols={2}>
   <Card title="Demo Server 1" icon="server" href="https://demo.traccar.org/api">
@@ -145,6 +145,9 @@ Traccar maintains four public demo servers you can use for development and testi
   </Card>
   <Card title="Demo Server 4" icon="server" href="https://demo4.traccar.org/api">
     demo4.traccar.org/api
+  </Card>
+  <Card title="Subscription Server" icon="server" href="https://server.traccar.org/api">
+    server.traccar.org/api
   </Card>
 </CardGroup>
 

@@ -1,7 +1,7 @@
 ---
 title: "Devices API — Register and Manage GPS Trackers"
 sidebarTitle: "Devices"
-description: "CRUD endpoints for GPS devices. GET /api/devices lists all accessible devices. POST creates a new device with uniqueId. Supports filtering by status and groupId."
+description: "CRUD endpoints for GPS devices. GET /api/devices lists all accessible devices. POST creates a new device with uniqueId. Supports filtering by keyword, id, and uniqueId."
 ---
 
 The Devices API manages the registry of GPS hardware connected to a Traccar server. Every physical tracker must be registered before its data is stored. Each device has a `uniqueId` that matches the hardware identifier sent over the GPS protocol — typically the IMEI number for cellular trackers. Traccar uses this value to route incoming raw packets to the correct device record.
@@ -108,8 +108,8 @@ List GPS devices accessible to the current user. Without any query parameters, r
 # All devices for the current user
 curl -u admin:password http://localhost:8082/api/devices
 
-# Devices by group
-curl -u admin:password 'http://localhost:8082/api/devices?groupId=5'
+# Fetch a specific device by internal ID
+curl -u admin:password 'http://localhost:8082/api/devices?id=5'
 
 # Fetch two specific devices by IMEI
 curl -u admin:password \

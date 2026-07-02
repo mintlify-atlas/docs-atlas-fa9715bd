@@ -1,5 +1,5 @@
 ---
-title: "Traccar Configuration File Reference"
+title: "Traccar Server Configuration File (traccar.xml) Guide"
 sidebarTitle: "Overview"
 description: "Configure Traccar through traccar.xml. Covers server settings, timeouts, buffering, media storage, map matching, geocoding, and forward hooks."
 ---
@@ -84,8 +84,8 @@ Traccar can reverse-geocode device positions to produce human-readable address s
 
 | Key | Type | Default | Description |
 |-----|------|---------|-------------|
-| `geocoder.enable` | boolean | `false` | Enable reverse geocoding for all incoming positions. |
-| `geocoder.type` | string | — | Geocoder provider. See the list of supported providers below. |
+| `geocoder.enable` | boolean | `true` | Enable reverse geocoding for all incoming positions. |
+| `geocoder.type` | string | `locationiq` | Geocoder provider. See the list of supported providers below. |
 | `geocoder.url` | string | — | Custom endpoint URL. Required for self-hosted providers like Nominatim or Gisgraphy. |
 | `geocoder.key` | string | — | API key for commercial geocoding providers. |
 | `geocoder.language` | string | — | Language code for localized address results (supported by Google, Nominatim, etc.). |
@@ -100,7 +100,7 @@ Traccar can reverse-geocode device positions to produce human-readable address s
 - `nominatim` — OpenStreetMap Nominatim (free, self-hostable)
 - `gisgraphy` — Gisgraphy (open source, self-hostable)
 - `google` — Google Maps Geocoding API (requires API key)
-- `bing` — Bing Maps (requires API key)
+- `bingmaps` — Bing Maps (requires API key)
 - `here` — HERE Geocoding API (requires API key)
 - `mapbox` — Mapbox (requires API key)
 - `maptiler` — MapTiler (requires API key)
@@ -113,9 +113,10 @@ Traccar can reverse-geocode device positions to produce human-readable address s
 - `geocodexyz` — Geocode.xyz
 - `geocodejson` — Generic GeocodeJSON-compatible endpoint
 - `tomtom` — TomTom Geocoding API (requires API key)
-- `bandu` — Baidu Maps (for China deployments)
+- `baidu` — Baidu Maps (for China deployments)
 - `tencent` — Tencent Maps (for China deployments)
 - `autonavi` — AutoNavi / Gaode (for China deployments)
+- `ban` — Base Adresse Nationale (French government address database)
 - `mapmyindia` — MapmyIndia (for India deployments)
 - `pluscodes` — Google Plus Codes / Open Location Code
 - `factual` — Factual API
@@ -160,7 +161,7 @@ Traccar can forward every received position to an external HTTP endpoint, Kafka 
 
 | Key | Type | Default | Description |
 |-----|------|---------|-------------|
-| `forward.type` | string | `url` | Forwarding format. Available options: `url` (HTTP GET with query parameters), `json` (HTTP POST with JSON body), `kafka`, `amqp`. |
+| `forward.type` | string | `url` | Forwarding format. Available options: `url` (HTTP GET with query parameters), `json` (HTTP POST with JSON body), `kafka`. |
 | `forward.url` | string | — | URL to forward positions to. Supports position attribute placeholders, e.g. `{uniqueId}`, `{latitude}`, `{longitude}`, `{speed}`. |
 | `forward.header` | string | — | Additional HTTP header for authorization or routing. Example: `Authorization: Bearer mytoken`. |
 | `forward.exchange` | string | `traccar` | AMQP exchange name (when `forward.type` is `amqp`). |

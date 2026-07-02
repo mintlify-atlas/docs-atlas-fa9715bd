@@ -1,7 +1,7 @@
 ---
 title: "Events, Alarms, and Alert Notifications in Traccar"
 sidebarTitle: "Events & Alerts"
-description: "Traccar generates events for device state changes, geofence crossings, alarms, and driver behavior. Subscribe to notifications via email, Telegram, SMS, and more."
+description: "Traccar fires events for device state changes, geofence crossings, alarms, and driver activity. Deliver alerts via email, Telegram, SMS, push, and more."
 ---
 
 Traccar generates structured events as devices report new positions. Events cover everything from status changes to geofence crossings, alarms, and driver behavior anomalies. Users subscribe to event types and receive notifications through their configured channels. Each event record is associated with a device, an optional position, and an optional linked entity (geofence, maintenance schedule, etc.).
@@ -61,7 +61,7 @@ All event type constants are defined in `Event.java`. They are organized below b
 |---|---|
 | `alarm` | A device-reported alarm; the specific type is in the `alarm` attribute |
 
-Alarm subtypes (values of `Position.KEY_ALARM`) include: `general`, `sos`, `vibration`, `movement`, `overspeed`, `lowspeed`, `fallDown`, `lowPower`, `lowBattery`, `fault`, `powerOff`, `powerOn`, `powerCut`, `powerRestored`, `door`, `lock`, `unlock`, `geofenceEnter`, `geofenceExit`, `gpsAntennaCut`, `accident`, `tow`, `idle`, `highRpm`, `hardAcceleration`, `hardBraking`, `hardCornering`, `laneChange`, `fatigueDriving`, `jamming`, `temperature`, `parking`, `bonnet`, `footBrake`, `fuelLeak`, `tampering`, `removing`.
+Alarm subtypes (values of `Position.KEY_ALARM`) include: `general`, `sos`, `vibration`, `movement`, `overspeed`, `lowspeed`, `fallDown`, `lowPower`, `lowBattery`, `fault`, `powerOff`, `powerOn`, `powerCut`, `powerRestored`, `door`, `lock`, `unlock`, `geofence`, `geofenceEnter`, `geofenceExit`, `gpsAntennaCut`, `accident`, `tow`, `idle`, `highRpm`, `hardAcceleration`, `hardBraking`, `hardCornering`, `laneChange`, `fatigueDriving`, `jamming`, `temperature`, `parking`, `bonnet`, `footBrake`, `fuelLeak`, `tampering`, `removing`.
 
 ### Ignition
 

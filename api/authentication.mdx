@@ -1,7 +1,7 @@
 ---
-title: "Authenticate with the Traccar REST API"
+title: "Traccar REST API Authentication: Tokens, TOTP, OIDC"
 sidebarTitle: "Authentication"
-description: "Three ways to authenticate Traccar API requests: HTTP Basic Auth, long-lived API tokens, and session cookies. Includes token creation, TOTP, and OpenID Connect."
+description: "Three ways to authenticate Traccar API requests: HTTP Basic Auth, long-lived API tokens, and session cookies. Covers TOTP and OpenID Connect."
 ---
 
 Every Traccar API request (except the health check at `GET /api/health`) requires authentication. The API supports HTTP Basic Auth for simple scripts, token-based auth for long-running integrations, and session cookies for web applications. All three methods are handled by the same `SecurityRequestFilter` on the server, which inspects the `Authorization` header first and falls back to the session cookie.
@@ -48,18 +48,19 @@ The endpoint returns the token as a plain-text string. Store it securely — it 
 
 ### Using the Token
 
-Pass the token in the `Authorization: Bearer` header on subsequent requests, or supply it as the `token` query parameter:
+Pass the token in the `Authorization: Bearer` header on subsequent requests:
 
 ```bash
-# Authorization header (recommended)
 curl -H 'Authorization: Bearer YOUR_TOKEN_HERE' \
   http://localhost:8082/api/devices
-
-# Query parameter (useful for quick testing or browser links)
-curl 'http://localhost:8082/api/devices?token=YOUR_TOKEN_HERE'
 ```
 
-When a `token` query parameter is present on `GET /api/session`, the server also establishes a full HTTP session so the token can bootstrap a browser session.
+You can also supply the token as a `token` query parameter on `GET /api/session` specifically — this bootstraps a full HTTP session from a token, which is useful for browser-based flows:
+
+```bash
+# Establishes a session from a token (GET /api/session only)
+curl -c cookies.txt 'http://localhost:8082/api/session?token=YOUR_TOKEN_HERE'
+```
 
 ### Token Expiration
 
@@ -157,7 +158,7 @@ curl -X POST \
 
 If the `code` is omitted but TOTP is required, the server returns `401 Unauthorized` with the header:
 
-```
+```http
 WWW-Authenticate: TOTP
 ```
 
@@ -171,7 +172,7 @@ When OpenID Connect (OIDC) is configured on the server, users can authenticate v
   <Step title="Start the OIDC flow">
     Redirect the user's browser to the Traccar OIDC auth endpoint. The server redirects to the configured identity provider's authorization URL.
 
-    ```
+    ```text
     GET /api/session/openid/auth
     → 303 Redirect to identity provider
     ```
@@ -182,7 +183,7 @@ When OpenID Connect (OIDC) is configured on the server, users can authenticate v
   <Step title="Callback completes the session">
     Traccar handles the callback automatically. If the user's email matches an existing account, the session is established for that user. If `OPENID_ALLOW_REGISTRATION` is enabled and no account exists, a new user account is created.
 
-    ```
+    ```text
     GET /api/session/openid/callback?code=...&state=...
     → 303 Redirect to Traccar homepage
     ```

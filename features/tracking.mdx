@@ -1,5 +1,5 @@
 ---
-title: "Real-Time GPS Tracking and Position Data"
+title: "Real-Time GPS Tracking: Positions and Telemetry Data"
 sidebarTitle: "Live Tracking"
 description: "Understand how Traccar receives, processes, and stores GPS positions. Covers position fields, telemetry attributes, live updates, and data forwarding."
 ---
@@ -120,7 +120,6 @@ Beyond the core fields, each position carries a dynamic attributes map populated
 | `armed` | boolean | Alarm system armed state |
 | `lock` | boolean | Door/lock state |
 | `door` | boolean | Door open state |
-| `bonnet` | boolean | Bonnet (hood) open state |
 
 ### Driver & Communication
 
@@ -156,6 +155,7 @@ The `alarm` attribute carries one or more comma-separated alarm type strings. De
 | `door` | Door tamper alarm |
 | `lock` | Lock alarm |
 | `unlock` | Unlock alarm |
+| `geofence` | Generic device-reported geofence alarm |
 | `geofenceEnter` | Device-reported geofence entry |
 | `geofenceExit` | Device-reported geofence exit |
 | `gpsAntennaCut` | GPS antenna cut |
@@ -171,6 +171,7 @@ The `alarm` attribute carries one or more comma-separated alarm type strings. De
 | `jamming` | GPS/GSM jamming detected |
 | `temperature` | Temperature threshold exceeded |
 | `parking` | Parking violation |
+| `bonnet` | Bonnet (hood) open alarm |
 | `footBrake` | Foot brake alarm |
 | `fuelLeak` | Fuel leak detected |
 | `tampering` | Device tampering |

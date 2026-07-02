@@ -272,7 +272,7 @@ TOTP is managed at the server level via two server attributes:
   <Step title="Generate a TOTP secret">
     ```bash
     # Generate a TOTP key for the current user
-    POST /api/users/{id}/totp
+    POST /api/users/totp
     ```
     Returns a TOTP secret and a QR code URL that the user scans with their authenticator app.
   </Step>

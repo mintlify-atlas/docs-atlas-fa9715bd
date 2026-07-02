@@ -1,7 +1,7 @@
 ---
-title: "Create and Manage Geofences in Traccar"
+title: "Creating and Managing Geofences in Traccar GPS System"
 sidebarTitle: "Geofences"
-description: "Define geographic boundaries as circles, polygons, or polylines. Traccar triggers geofenceEnter and geofenceExit events when devices cross boundaries."
+description: "Define geographic zones as circles, polygons, or polyline corridors. Traccar evaluates them server-side and fires enter and exit events on every position."
 ---
 
 Geofences in Traccar are named geographic boundaries that trigger events when a device enters or exits them. They can be linked to specific devices, groups, or all devices under a user. Geofences are evaluated server-side on every incoming position, so no firmware changes are required on the device.
@@ -21,47 +21,47 @@ The `Geofence` model (`Geofence.java`) includes the following fields:
 
 ## Geofence Types
 
-Traccar supports three geometry types, each expressed as a string in the `area` field. The format mirrors WKT (Well-Known Text) conventions.
+Traccar supports three geometry types, each expressed as a string in the `area` field. The format is similar to WKT (Well-Known Text) but uses **latitude longitude** coordinate order throughout — note that standard WKT uses longitude latitude, so Traccar's format differs.
 
 <Tabs>
   <Tab title="Circle">
     A circular zone defined by a center point and radius in meters.
 
-    ```
+    ```text
     CIRCLE (latitude longitude radius)
     ```
 
     **Example** — 500-metre radius around a point:
-    ```
+    ```text
     CIRCLE (37.7749 -122.4194 500)
     ```
 
     Circles are the most efficient type for server-side evaluation and are ideal for representing depots, warehouses, or customer sites.
   </Tab>
   <Tab title="Polygon">
-    A closed polygon defined by three or more coordinate pairs. The first and last point must be identical to close the ring.
+    A closed polygon defined by three or more coordinate pairs. The first and last point must be identical to close the ring. Each pair is **latitude longitude** (space-separated).
 
-    ```
-    POLYGON ((lon1 lat1, lon2 lat2, ..., lon1 lat1))
+    ```text
+    POLYGON ((lat1 lon1, lat2 lon2, ..., lat1 lon1))
     ```
 
     **Example** — rectangular zone:
-    ```
-    POLYGON ((-122.42 37.78, -122.41 37.78, -122.41 37.77, -122.42 37.77, -122.42 37.78))
+    ```text
+    POLYGON ((37.78 -122.42, 37.78 -122.41, 37.77 -122.41, 37.77 -122.42, 37.78 -122.42))
     ```
 
     Use polygons for irregular-shaped zones such as industrial sites, city limits, or custom delivery areas.
   </Tab>
   <Tab title="Polyline (Corridor)">
-    A corridor along a route — a `LINESTRING` with a configurable buffer width. The effective detection distance is controlled by the `polylineDistance` attribute (default: 25 metres).
+    A corridor along a route — a `LINESTRING` with a configurable buffer width. The effective detection distance is controlled by the `polylineDistance` attribute (default: 25 metres). Each pair is **latitude longitude** (space-separated).
 
-    ```
-    LINESTRING (lon1 lat1, lon2 lat2, ...)
+    ```text
+    LINESTRING (lat1 lon1, lat2 lon2, ...)
     ```
 
     **Example** — corridor along a road:
-    ```
-    LINESTRING (-122.42 37.78, -122.41 37.76, -122.40 37.74)
+    ```text
+    LINESTRING (37.78 -122.42, 37.76 -122.41, 37.74 -122.40)
     ```
 
     Polyline geofences are useful for monitoring route compliance. Set the `polylineDistance` attribute (in metres) to widen or narrow the corridor.
@@ -151,19 +151,19 @@ Configure the thresholds via device or group attributes:
   </Tab>
   <Tab title="Create Polygon">
     ```bash
-    # Create a polygon geofence
+    # Create a polygon geofence (coordinates are latitude longitude)
     curl -X POST -u admin:password \
       -H 'Content-Type: application/json' \
-      -d '{"name":"Zone A","area":"POLYGON ((-122.42 37.78, -122.41 37.78, -122.41 37.77, -122.42 37.77, -122.42 37.78))"}' \
+      -d '{"name":"Zone A","area":"POLYGON ((37.78 -122.42, 37.78 -122.41, 37.77 -122.41, 37.77 -122.42, 37.78 -122.42))"}' \
       http://localhost:8082/api/geofences
     ```
   </Tab>
   <Tab title="Create Corridor">
     ```bash
-    # Create a polyline (corridor) geofence with 50m width
+    # Create a polyline (corridor) geofence with 50m width (coordinates are latitude longitude)
     curl -X POST -u admin:password \
       -H 'Content-Type: application/json' \
-      -d '{"name":"Route 1","area":"LINESTRING (-122.42 37.78, -122.41 37.76, -122.40 37.74)","attributes":{"polylineDistance":50}}' \
+      -d '{"name":"Route 1","area":"LINESTRING (37.78 -122.42, 37.76 -122.41, 37.74 -122.40)","attributes":{"polylineDistance":50}}' \
       http://localhost:8082/api/geofences
     ```
   </Tab>

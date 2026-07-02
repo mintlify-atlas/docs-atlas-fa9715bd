@@ -1,5 +1,5 @@
 ---
-title: "Configure a Database for Traccar"
+title: "Configure a Production Database Backend for Traccar"
 sidebarTitle: "Database Setup"
 description: "Connect Traccar to MySQL, PostgreSQL, MariaDB, or Microsoft SQL Server. Includes JDBC URL formats, connection pool settings, and schema migration."
 ---
@@ -21,6 +21,8 @@ Traccar uses [Liquibase](https://www.liquibase.org/) for schema management — i
 
 ### Create the database
 
+Replace `your_password` with a strong, unique password before running these statements.
+
 ```sql
 CREATE DATABASE traccar CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
 CREATE USER 'traccar'@'%' IDENTIFIED BY 'your_password';
@@ -29,6 +31,8 @@ FLUSH PRIVILEGES;
 ```
 
 ### traccar.xml entries
+
+Replace `your_password` with the password you set above.
 
 ```xml
 <?xml version="1.0" encoding="UTF-8"?>
@@ -53,6 +57,8 @@ For a full production URL with character-set and session-variable flags (recomme
 
 ### Create the database
 
+Replace `your_password` with a strong, unique password before running these statements.
+
 ```sql
 CREATE DATABASE traccar;
 CREATE USER traccar WITH PASSWORD 'your_password';
@@ -60,6 +66,8 @@ GRANT ALL PRIVILEGES ON DATABASE traccar TO traccar;
 ```
 
 ### traccar.xml entries
+
+Replace `your_password` with the password you set above.
 
 ```xml
 <?xml version="1.0" encoding="UTF-8"?>
@@ -76,7 +84,7 @@ GRANT ALL PRIVILEGES ON DATABASE traccar TO traccar;
 
 ## MariaDB Configuration
 
-MariaDB uses its own JDBC driver but otherwise accepts the same database and JDBC URL structure as MySQL:
+MariaDB uses its own JDBC driver but otherwise accepts the same database and JDBC URL structure as MySQL. Replace `your_password` with the database user's password.
 
 ```xml
 <entry key='database.driver'>org.mariadb.jdbc.Driver</entry>
@@ -87,7 +95,7 @@ MariaDB uses its own JDBC driver but otherwise accepts the same database and JDB
 
 ## TimescaleDB Configuration
 
-TimescaleDB is a PostgreSQL extension that partitions `tc_positions` into time-ordered chunks, dramatically accelerating queries that filter by timestamp. Connect to it exactly like PostgreSQL:
+TimescaleDB is a PostgreSQL extension that partitions `tc_positions` into time-ordered chunks, dramatically accelerating queries that filter by timestamp. Connect to it exactly like PostgreSQL. Replace `your_password` with the database user's password.
 
 ```xml
 <entry key='database.driver'>org.postgresql.Driver</entry>
