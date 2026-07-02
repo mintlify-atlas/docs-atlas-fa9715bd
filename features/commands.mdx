@@ -1,0 +1,254 @@
+---
+title: "Send Remote Commands to GPS Devices"
+sidebarTitle: "Commands"
+description: "Send engine immobilizer, output control, position poll, and other remote commands to GPS devices directly from Traccar via the REST API."
+---
+
+Traccar can send commands to devices that support two-way communication. Commands are sent via the REST API and delivered to the device over its existing TCP connection, or queued for delivery the next time the device connects. The set of supported command types depends on the device protocol — Traccar validates this before attempting delivery.
+
+## Command Types
+
+All command type constants are defined in `Command.java`. The full list of `TYPE_*` values is:
+
+### Position & Reporting
+
+| Command Type | Description |
+|---|---|
+| `positionSingle` | Request a single position update immediately |
+| `positionPeriodic` | Set the periodic reporting interval (requires `frequency` attribute in seconds) |
+| `positionStop` | Stop all periodic position reporting |
+
+### Engine & Power
+
+| Command Type | Description |
+|---|---|
+| `engineStop` | Activate the vehicle immobilizer / cut engine |
+| `engineResume` | Deactivate the immobilizer / restore engine |
+| `powerOff` | Cut power to the device |
+| `rebootDevice` | Reboot the device firmware |
+| `factoryReset` | Reset the device to factory defaults |
+| `modePowerSaving` | Switch the device to power-saving mode |
+| `modeDeepSleep` | Switch the device to deep-sleep mode |
+
+### Outputs & I/O
+
+| Command Type | Description |
+|---|---|
+| `outputControl` | Control a digital output (requires `index` and `data` attributes) |
+
+### Configuration
+
+| Command Type | Description |
+|---|---|
+| `setTimezone` | Set the device's local timezone (requires `timezone` attribute) |
+| `setConnection` | Update the server hostname and port the device connects to (requires `server` and `port`) |
+| `setOdometer` | Reset or set the device odometer value |
+| `setSpeedLimit` | Configure a speed limit on the device |
+| `setAgps` | Push AGPS data to the device |
+| `setIndicator` | Control an onboard LED or indicator |
+| `configuration` | Send a custom configuration string |
+| `getVersion` | Request the firmware/hardware version |
+| `firmwareUpdate` | Trigger a firmware OTA update |
+| `getModemStatus` | Request modem status information |
+| `getDeviceStatus` | Request full device status |
+
+### Communication
+
+| Command Type | Description |
+|---|---|
+| `message` | Send a text message to the device display |
+| `voiceMessage` | Send a voice message |
+| `sendSms` | Send an SMS through the device |
+| `sendUssd` | Send a USSD request through the device SIM |
+| `sosNumber` | Set the SOS callback number |
+| `silenceTime` | Configure silent hours |
+| `setPhonebook` | Upload a phonebook to the device |
+| `voiceMonitoring` | Enable or disable audio monitoring |
+| `deviceIdentification` | Request device identification string |
+
+### Alarms (Device-Side)
+
+| Command Type | Description |
+|---|---|
+| `alarmArm` | Arm the device alarm system |
+| `alarmDisarm` | Disarm the device alarm system |
+| `alarmDismiss` | Acknowledge/dismiss an active alarm |
+| `alarmGeofence` | Configure geofence alarm on the device |
+| `alarmBattery` | Configure low-battery alarm on the device |
+| `alarmSos` | Configure SOS alarm settings |
+| `alarmRemove` | Configure remove/tamper alarm |
+| `alarmClock` | Configure a scheduled (clock) alarm |
+| `alarmSpeed` | Configure a speed alarm threshold on the device |
+| `alarmFall` | Configure fall-detection alarm |
+| `alarmVibration` | Configure vibration alarm |
+
+### Media
+
+| Command Type | Description |
+|---|---|
+| `requestPhoto` | Request the device to capture and upload a photo |
+| `videoStart` | Start video streaming or recording |
+| `videoStop` | Stop video streaming or recording |
+
+### Custom
+
+| Command Type | Description |
+|---|---|
+| `custom` | Send a raw custom string to the device (supported by all protocols as a fallback) |
+
+## Command Attributes
+
+Many commands require additional parameters passed in the `attributes` object:
+
+| Attribute Key | Used By | Description |
+|---|---|---|
+| `frequency` | `positionPeriodic` | Reporting interval in seconds |
+| `index` | `outputControl` | Output channel index |
+| `data` | `outputControl` | Output state (`1` to activate, `0` to deactivate) |
+| `timezone` | `setTimezone` | Timezone string (e.g., `America/New_York`) |
+| `server` | `setConnection` | Hostname or IP of the Traccar server |
+| `port` | `setConnection` | TCP port of the Traccar server |
+| `message` | `message`, `sendSms` | Text content |
+| `phone` | `sendSms`, `sosNumber` | Phone number |
+| `enable` | Various alarm commands | `true` to enable, `false` to disable |
+| `radius` | `alarmGeofence` | Radius in meters for device-side geofence alarm |
+| `language` | Various | Language code for device display |
+| `devicePassword` | Various | Device security password |
+| `noQueue` | Any | When `true`, fail immediately if the device is offline instead of queuing |
+
+## Sending Commands
+
+Traccar provides two distinct command delivery paths:
+
+<Tabs>
+  <Tab title="Immediate Send">
+    `POST /api/commands/send` attempts to deliver the command directly over the device's active TCP connection. If the device is currently connected, the command is dispatched immediately and the response confirms delivery. If the device is offline and `noQueue` is not set, the command is queued automatically.
+
+    ```bash
+    # Send engine stop immediately
+    curl -X POST -u admin:password \
+      -H 'Content-Type: application/json' \
+      -d '{"deviceId":1,"type":"engineStop","attributes":{}}' \
+      http://localhost:8082/api/commands/send
+
+    # Set reporting interval to 30 seconds
+    curl -X POST -u admin:password \
+      -H 'Content-Type: application/json' \
+      -d '{"deviceId":1,"type":"positionPeriodic","attributes":{"frequency":30}}' \
+      http://localhost:8082/api/commands/send
+
+    # Control output 1 (activate)
+    curl -X POST -u admin:password \
+      -H 'Content-Type: application/json' \
+      -d '{"deviceId":1,"type":"outputControl","attributes":{"index":1,"data":"1"}}' \
+      http://localhost:8082/api/commands/send
+    ```
+
+    When the device is online and the command is sent successfully, the response is `200 OK` with the command object. When the command is queued because the device is offline, the response is `202 Accepted` with a `QueuedCommand` object.
+  </Tab>
+  <Tab title="Queued (Offline) Commands">
+    `POST /api/commands` saves the command without attempting immediate delivery. It will be sent the next time the device establishes a connection.
+
+    ```bash
+    # Queue engine resume for an offline device
+    curl -X POST -u admin:password \
+      -H 'Content-Type: application/json' \
+      -d '{"deviceId":1,"type":"engineResume","attributes":{}}' \
+      http://localhost:8082/api/commands
+    ```
+  </Tab>
+  <Tab title="Group Commands">
+    To send the same command to all devices in a group, add `groupId` as a query parameter to the send endpoint. Traccar iterates over all accessible devices in the group and queues or delivers the command to each.
+
+    ```bash
+    curl -X POST -u admin:password \
+      -H 'Content-Type: application/json' \
+      -d '{"type":"positionPeriodic","attributes":{"frequency":60}}' \
+      'http://localhost:8082/api/commands/send?groupId=2'
+    ```
+  </Tab>
+  <Tab title="Saved Command Templates">
+    Store frequently used commands as named templates via `POST /api/commands`. These saved commands can be reused by ID in subsequent send requests.
+
+    ```bash
+    # Save a command template
+    curl -X POST -u admin:password \
+      -H 'Content-Type: application/json' \
+      -d '{"description":"30s Interval","type":"positionPeriodic","attributes":{"frequency":30}}' \
+      http://localhost:8082/api/commands
+
+    # Use the saved command by ID (sets deviceId at send time)
+    curl -X POST -u admin:password \
+      -H 'Content-Type: application/json' \
+      -d '{"id":5,"deviceId":1}' \
+      http://localhost:8082/api/commands/send
+    ```
+  </Tab>
+</Tabs>
+
+## Checking Supported Command Types
+
+Before sending a command, you can query which types are supported by a specific device based on its protocol and last known connection type:
+
+```bash
+# Get supported command types for device ID 1
+curl -u admin:password \
+  'http://localhost:8082/api/commands/types?deviceId=1'
+
+# Get supported text-channel (SMS) command types
+curl -u admin:password \
+  'http://localhost:8082/api/commands/types?deviceId=1&textChannel=true'
+```
+
+If no `deviceId` is provided, the endpoint returns all known command types across all protocols.
+
+## SMS Fallback
+
+Some protocols support sending commands via SMS when the TCP connection is unavailable. If a device has a `phone` number configured and the protocol supports the text channel, Traccar can route commands through an SMS gateway. Set `textChannel: true` in the command object to force SMS delivery instead of the data channel.
+
+## API Examples
+
+```bash
+# Get supported command types for a device
+curl -u admin:password \
+  'http://localhost:8082/api/commands/types?deviceId=1'
+
+# Send engine stop command immediately
+curl -X POST -u admin:password \
+  -H 'Content-Type: application/json' \
+  -d '{"deviceId":1,"type":"engineStop","attributes":{}}' \
+  http://localhost:8082/api/commands/send
+
+# Set reporting interval to 30 seconds
+curl -X POST -u admin:password \
+  -H 'Content-Type: application/json' \
+  -d '{"deviceId":1,"type":"positionPeriodic","attributes":{"frequency":30}}' \
+  http://localhost:8082/api/commands/send
+
+# Queue a command for an offline device
+curl -X POST -u admin:password \
+  -H 'Content-Type: application/json' \
+  -d '{"deviceId":1,"type":"engineResume","attributes":{}}' \
+  http://localhost:8082/api/commands
+
+# Request a photo from the device
+curl -X POST -u admin:password \
+  -H 'Content-Type: application/json' \
+  -d '{"deviceId":1,"type":"requestPhoto","attributes":{}}' \
+  http://localhost:8082/api/commands/send
+
+# Send a custom raw command
+curl -X POST -u admin:password \
+  -H 'Content-Type: application/json' \
+  -d '{"deviceId":1,"type":"custom","attributes":{"data":"YOUR_RAW_COMMAND"}}' \
+  http://localhost:8082/api/commands/send
+```
+
+<Warning>
+**Engine stop commands are safety-critical.** Sending `engineStop` to a moving vehicle may cause loss of control. Always verify that:
+1. The target device supports the `engineStop` command type (check `/api/commands/types`).
+2. The vehicle is stationary or in a safe situation before issuing the command.
+3. You have explicit authorization to immobilize the vehicle in your jurisdiction.
+
+Test with `positionSingle` or `getVersion` first to confirm two-way connectivity before deploying immobilizer commands in production.
+</Warning>

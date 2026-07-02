@@ -1,0 +1,154 @@
+---
+title: "Managing GPS Devices, Groups, and Drivers in Traccar"
+sidebarTitle: "Devices & Fleet"
+description: "Add and configure GPS tracking devices, organize them into hierarchical groups, assign drivers, and manage computed attributes and maintenance schedules."
+---
+
+Traccar's device management lets you register tracking hardware, organize units into hierarchical groups, assign drivers, and configure per-device attributes — all via the web interface or REST API. Every device is uniquely identified by its hardware ID (`uniqueId`), which maps incoming GPS data to the correct record in the system.
+
+## Device Fields
+
+When you create or update a device, the following fields are available (sourced from `Device.java`):
+
+| Field | Type | Description |
+|---|---|---|
+| `id` | long | Auto-assigned internal identifier |
+| `name` | string | Human-readable label for the device |
+| `uniqueId` | string | Hardware identifier sent by the device (IMEI, serial number, etc.) |
+| `groupId` | long | ID of the parent group (0 if ungrouped) |
+| `status` | string | Runtime status: `online`, `offline`, or `unknown` |
+| `lastUpdate` | date | Timestamp of the last received message |
+| `positionId` | long | ID of the most recent position record |
+| `phone` | string | Phone number for SMS-based commands |
+| `model` | string | Device hardware model (informational) |
+| `contact` | string | Contact person or notes |
+| `category` | string | Icon category used on the map |
+| `disabled` | boolean | When `true`, incoming data from this device is ignored |
+| `calendarId` | long | Optional calendar to restrict active data-acceptance hours |
+| `expirationTime` | date | Optional expiration date after which the device is disabled |
+
+## Device Categories
+
+The `category` field controls which icon Traccar displays on the map for a device. Supported values are:
+
+<CardGroup cols={4}>
+  <Card title="arrow" />
+  <Card title="default" />
+  <Card title="animal" />
+  <Card title="bicycle" />
+  <Card title="boat" />
+  <Card title="bus" />
+  <Card title="car" />
+  <Card title="crane" />
+  <Card title="helicopter" />
+  <Card title="motorcycle" />
+  <Card title="offroad" />
+  <Card title="person" />
+  <Card title="pickup" />
+  <Card title="plane" />
+  <Card title="ship" />
+  <Card title="tractor" />
+  <Card title="train" />
+  <Card title="tram" />
+  <Card title="trolleybus" />
+  <Card title="truck" />
+  <Card title="van" />
+</CardGroup>
+
+## Groups
+
+Groups let you organize devices into a hierarchy for easier management. A device can belong to one group, and groups can be nested — a group can itself belong to a parent group. Devices automatically inherit settings (computed attributes, geofences, notifications) from their parent group chain.
+
+The `Group` model (`Group.java`) has the following fields:
+
+| Field | Type | Description |
+|---|---|---|
+| `id` | long | Auto-assigned identifier |
+| `name` | string | Display name of the group |
+| `groupId` | long | Parent group ID (inherited from `GroupedModel`) |
+
+<Tip>
+Assign geofences, notification rules, and computed attributes at the group level to apply them to all devices in the group without configuring each one individually.
+</Tip>
+
+## Drivers
+
+Traccar's driver management allows you to link a known driver to an active vehicle. The `Driver` model (`Driver.java`) contains:
+
+| Field | Type | Description |
+|---|---|---|
+| `id` | long | Auto-assigned identifier |
+| `name` | string | Driver's full name |
+| `uniqueId` | string | Hardware identifier — typically an RFID tag or iButton key ID |
+
+When a device transmits a `driverUniqueId` attribute in a position (stored as `Position.KEY_DRIVER_UNIQUE_ID`), Traccar looks up the matching driver by their `uniqueId`. A `driverChanged` event is emitted whenever the active driver changes, and the trip report includes the driver name and unique ID for each trip segment.
+
+## Device Status
+
+Traccar derives a device's real-time status from the age of its last update relative to the `server.timeout` configuration key (default: 600 seconds):
+
+| Status | Meaning |
+|---|---|
+| `online` | A position or heartbeat was received within the timeout window |
+| `unknown` | No data received for longer than the timeout, but within double the timeout |
+| `offline` | No data received for longer than double the timeout |
+
+Status transitions are computed in memory and reflected in the `status` field returned by `GET /api/devices`.
+
+## Computed Attributes
+
+Computed attributes are JavaScript expressions evaluated against each incoming `Position` object. They allow you to derive custom values, perform unit conversions, or generate custom alarm conditions without modifying server source code.
+
+Common use cases:
+- Converting raw sensor values to engineering units
+- Calculating a custom "efficiency" metric from speed and fuel consumption
+- Triggering a custom alarm based on combined attribute conditions
+
+You can test a computed attribute before saving it by sending a `POST` request to `/api/attributes/computed/test` with a `deviceId` query parameter. Traccar will evaluate the expression against the device's latest position and return the result.
+
+## Maintenance
+
+The `Maintenance` model allows you to schedule recurring service reminders based on any numeric position attribute — most commonly `odometer` (in meters) or `hours` (in milliseconds).
+
+| Field | Type | Description |
+|---|---|---|
+| `name` | string | Maintenance schedule label (e.g., "Oil Change") |
+| `type` | string | Attribute key to track (e.g., `odometer`, `hours`) |
+| `start` | double | Attribute value at which the first alert triggers |
+| `period` | double | Interval between subsequent alerts |
+
+When the tracked attribute crosses a threshold, a `maintenance` event is generated. You can reset the service counter by sending a `setOdometer` command via `POST /api/commands/send`.
+
+## API Examples
+
+<Tabs>
+  <Tab title="Create a Device">
+    ```bash
+    curl -X POST -u admin:password \
+      -H 'Content-Type: application/json' \
+      -d '{"name":"Vehicle 1","uniqueId":"123456789"}' \
+      http://localhost:8082/api/devices
+    ```
+  </Tab>
+  <Tab title="List All Devices">
+    ```bash
+    curl -u admin:password http://localhost:8082/api/devices
+    ```
+  </Tab>
+  <Tab title="Update a Device">
+    ```bash
+    curl -X PUT -u admin:password \
+      -H 'Content-Type: application/json' \
+      -d '{"id":1,"name":"Vehicle 1","uniqueId":"123456789","category":"truck","groupId":2}' \
+      http://localhost:8082/api/devices/1
+    ```
+  </Tab>
+  <Tab title="Create a Group">
+    ```bash
+    curl -X POST -u admin:password \
+      -H 'Content-Type: application/json' \
+      -d '{"name":"Fleet North","groupId":0}' \
+      http://localhost:8082/api/groups
+    ```
+  </Tab>
+</Tabs>

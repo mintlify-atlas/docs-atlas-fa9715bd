@@ -1,0 +1,188 @@
+---
+title: "Generate Fleet Reports in Traccar"
+sidebarTitle: "Reports"
+description: "Generate route, trip, stop, summary, and event reports for devices and groups. Export as JSON, Excel (XLSX), or GPX via the REST API."
+---
+
+Traccar's reporting engine generates detailed fleet analytics over any time range. Reports can be requested for individual devices or entire groups, and the API returns data as JSON or triggers file downloads in Excel (XLSX) or GPX format. All report endpoints require authentication and respect the user's device/group permissions.
+
+## Available Reports
+
+### Route
+
+**Endpoint:** `GET /api/reports/route`
+
+Returns every stored `Position` record for the specified device(s) or group(s) within the time range. Route data is ideal for trip playback on a map, post-incident analysis, or reconstructing a vehicle's exact path.
+
+Each item in the response is a full `Position` object, including all telemetry attributes parsed from the device protocol.
+
+### Trips
+
+**Endpoint:** `GET /api/reports/trips`
+
+Returns detected trip segments — continuous periods of movement separated by stops. Each `TripReportItem` includes:
+
+| Field | Description |
+|---|---|
+| `deviceId` / `deviceName` | Device identifier and name |
+| `startTime` / `endTime` | Trip start and end timestamps |
+| `startLat` / `startLon` | Coordinates at trip start |
+| `endLat` / `endLon` | Coordinates at trip end |
+| `startAddress` / `endAddress` | Reverse-geocoded addresses |
+| `startOdometer` / `endOdometer` | Odometer readings at start and end |
+| `distance` | Trip distance in meters |
+| `duration` | Trip duration in milliseconds |
+| `averageSpeed` | Average speed in knots |
+| `maxSpeed` | Maximum speed in knots |
+| `spentFuel` | Fuel consumed during the trip |
+| `driverUniqueId` / `driverName` | Driver assigned during the trip |
+
+### Stops
+
+**Endpoint:** `GET /api/reports/stops`
+
+Returns periods when the device was stationary. Each `StopReportItem` includes:
+
+| Field | Description |
+|---|---|
+| `deviceId` / `deviceName` | Device identifier and name |
+| `startTime` / `endTime` | Stop start and end timestamps |
+| `positionId` | Position ID of the stop location |
+| `latitude` / `longitude` | Stop coordinates |
+| `address` | Reverse-geocoded address of the stop |
+| `duration` | Stop duration in milliseconds |
+| `engineHours` | Engine-on hours during the stop (milliseconds) |
+| `spentFuel` | Fuel consumed while stopped |
+
+### Summary
+
+**Endpoint:** `GET /api/reports/summary`
+
+Returns aggregated statistics per device per time window. When the `daily=true` query parameter is set, results are broken down by day. Each `SummaryReportItem` includes:
+
+| Field | Description |
+|---|---|
+| `deviceId` / `deviceName` | Device identifier and name |
+| `startTime` / `endTime` | Period covered |
+| `distance` | Total distance in meters |
+| `averageSpeed` | Average speed in knots |
+| `maxSpeed` | Maximum speed in knots |
+| `engineHours` | Total engine hours (computed as `endHours − startHours`, in milliseconds) |
+| `spentFuel` | Total fuel consumed |
+| `startOdometer` / `endOdometer` | Odometer at period start and end |
+
+### Events
+
+**Endpoint:** `GET /api/reports/events`
+
+Returns the event log. Supports filtering by one or more event types (`type` parameter) and alarm subtypes (`alarm` parameter). Each item is a full `Event` object including the `geofenceId` or `maintenanceId` when applicable.
+
+### Combined
+
+**Endpoint:** `GET /api/reports/combined`
+
+Returns trips and events merged into a single chronological stream as `CombinedReportItem` objects. Useful for a unified activity timeline view showing movement and events together.
+
+### Geofences
+
+**Endpoint:** `GET /api/reports/geofences`
+
+Returns a log of geofence interactions — which devices entered or exited which geofences, and when. Supports filtering by `geofenceId` in addition to the standard device/group and time range parameters.
+
+### Devices (Export Only)
+
+**Endpoint:** `GET /api/reports/devices/xlsx`
+
+Exports a snapshot of all accessible devices and their current state as an Excel spreadsheet. No time range is required.
+
+## Common Query Parameters
+
+All time-range reports accept the following parameters:
+
+| Parameter | Required | Description |
+|---|---|---|
+| `deviceId` | One of these | Target device ID (can be repeated for multiple) |
+| `groupId` | One of these | Target group ID (can be repeated for multiple) |
+| `from` | Yes | Start of the time range in ISO 8601 UTC format |
+| `to` | Yes | End of the time range in ISO 8601 UTC format |
+| `daily` | No | Break summary results down by calendar day (`true`/`false`) |
+| `type` | No | Filter events report by event type (can be repeated) |
+| `alarm` | No | Filter events report by alarm subtype (can be repeated) |
+| `geofenceId` | No | Filter geofence report by specific geofence |
+
+## Export Formats
+
+<Tabs>
+  <Tab title="JSON (default)">
+    Omit the `Accept` header or set it to `application/json`. Results are returned as a JSON array.
+
+    ```bash
+    curl -u admin:password \
+      'http://localhost:8082/api/reports/trips?deviceId=1&from=2024-01-01T00:00:00Z&to=2024-01-31T23:59:59Z'
+    ```
+  </Tab>
+  <Tab title="Excel (XLSX)">
+    Set `Accept: application/vnd.openxmlformats-officedocument.spreadsheetml.sheet` to receive a formatted spreadsheet.
+
+    ```bash
+    curl -u admin:password \
+      -H 'Accept: application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' \
+      -o trips.xlsx \
+      'http://localhost:8082/api/reports/trips?deviceId=1&from=2024-01-01T00:00:00Z&to=2024-01-31T23:59:59Z'
+    ```
+
+    Alternatively, append `/xlsx` to the report path:
+
+    ```bash
+    curl -u admin:password \
+      -o route.xlsx \
+      'http://localhost:8082/api/reports/route/xlsx?deviceId=1&from=2024-01-01T00:00:00Z&to=2024-01-02T00:00:00Z'
+    ```
+  </Tab>
+  <Tab title="Email Delivery">
+    Append `/mail` to the report path to have the server generate the report and email it to the requesting user instead of returning it in the response body. The server returns `204 No Content` immediately.
+
+    ```bash
+    curl -u admin:password \
+      'http://localhost:8082/api/reports/summary/mail?groupId=1&from=2024-01-01T00:00:00Z&to=2024-01-31T23:59:59Z'
+    ```
+  </Tab>
+</Tabs>
+
+## API Examples
+
+```bash
+# Trip report for a single device
+curl -u admin:password \
+  'http://localhost:8082/api/reports/trips?deviceId=1&from=2024-01-01T00:00:00Z&to=2024-01-31T23:59:59Z'
+
+# Download trips as Excel
+curl -u admin:password \
+  -H 'Accept: application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' \
+  -o trips.xlsx \
+  'http://localhost:8082/api/reports/trips?deviceId=1&from=2024-01-01T00:00:00Z&to=2024-01-31T23:59:59Z'
+
+# Daily summary for a group
+curl -u admin:password \
+  'http://localhost:8082/api/reports/summary?groupId=1&daily=true&from=2024-01-01T00:00:00Z&to=2024-01-31T23:59:59Z'
+
+# Stops report with multiple devices
+curl -u admin:password \
+  'http://localhost:8082/api/reports/stops?deviceId=1&deviceId=2&deviceId=3&from=2024-01-01T00:00:00Z&to=2024-01-07T23:59:59Z'
+
+# Events filtered by type
+curl -u admin:password \
+  'http://localhost:8082/api/reports/events?deviceId=1&type=geofenceEnter&type=geofenceExit&from=2024-01-01T00:00:00Z&to=2024-01-31T23:59:59Z'
+
+# Geofence report
+curl -u admin:password \
+  'http://localhost:8082/api/reports/geofences?deviceId=1&geofenceId=5&from=2024-01-01T00:00:00Z&to=2024-01-31T23:59:59Z'
+```
+
+## Streaming Large Reports
+
+For the route report over large time ranges, Traccar streams the `Position` objects directly from the database using Java's `Stream<Position>` response type. This avoids loading the entire result set into memory. The response is a JSON array that is written incrementally, so clients should handle streaming JSON or use a suitable HTTP client.
+
+<Note>
+Trip and stop detection depends on the motion detection configuration. Reports may differ if `report.trip.newLogic` is enabled or if trip detection parameters (`minDistance`, `minDuration`, `stopGap`) are customized at the device or group level. Verify your motion settings before interpreting trip/stop report data.
+</Note>

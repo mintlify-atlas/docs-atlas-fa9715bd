@@ -1,0 +1,509 @@
+---
+title: "Users and Permissions API Reference"
+sidebarTitle: "Users & Permissions"
+description: "Manage user accounts and link objects with the Permissions API. POST /api/permissions creates device-user, geofence-device, and other object associations."
+---
+
+Traccar uses a link-based permission model. Users own and access objects — devices, geofences, notifications, and so on — through explicit permission records rather than role assignments. An administrator user can access all objects on the server. A regular user sees only the objects that have been linked to their account. Manager users (those with a non-zero `userLimit`) can create and manage subordinate users and delegate access to the objects they own.
+
+## User Object
+
+<ResponseField name="id" type="integer">
+  Unique user identifier. Read-only; assigned by the server on creation.
+</ResponseField>
+
+<ResponseField name="name" type="string" required>
+  Display name shown in the UI.
+</ResponseField>
+
+<ResponseField name="email" type="string" required>
+  Email address used for login and notifications. Leading and trailing whitespace is trimmed automatically.
+</ResponseField>
+
+<ResponseField name="login" type="string">
+  Optional alternative login username. When set, users may log in with either `login` or `email`.
+</ResponseField>
+
+<ResponseField name="password" type="string">
+  Write-only. Provide when creating or updating a user. Never returned in responses.
+</ResponseField>
+
+<ResponseField name="phone" type="string">
+  Contact phone number used for SMS notifications.
+</ResponseField>
+
+<ResponseField name="administrator" type="boolean">
+  Grants full administrative privileges when `true`. Admins can access all objects and modify server settings.
+</ResponseField>
+
+<ResponseField name="readonly" type="boolean">
+  When `true`, the user cannot change any settings or create/modify objects.
+</ResponseField>
+
+<ResponseField name="deviceReadonly" type="boolean">
+  Restricts the user from modifying device attributes even if not fully read-only.
+</ResponseField>
+
+<ResponseField name="limitCommands" type="boolean">
+  Prevents the user from sending commands that the device protocol does not explicitly list as supported.
+</ResponseField>
+
+<ResponseField name="disableReports" type="boolean">
+  When `true`, the user cannot access any Reports API endpoints.
+</ResponseField>
+
+<ResponseField name="fixedEmail" type="boolean">
+  Locks the email field so the user cannot change their own email address.
+</ResponseField>
+
+<ResponseField name="disabled" type="boolean">
+  Disables the account. A disabled user cannot log in.
+</ResponseField>
+
+<ResponseField name="expirationTime" type="string (ISO 8601)">
+  When set, the account is automatically disabled after this timestamp.
+</ResponseField>
+
+<ResponseField name="deviceLimit" type="integer">
+  Maximum number of devices the user may register. `-1` means unlimited. `0` uses the server default.
+</ResponseField>
+
+<ResponseField name="userLimit" type="integer">
+  Maximum number of subordinate users the account may create. A non-zero value grants manager role. `-1` means unlimited.
+</ResponseField>
+
+<ResponseField name="map" type="string">
+  Default map layer identifier shown on login.
+</ResponseField>
+
+<ResponseField name="latitude" type="number">
+  Default map center latitude on login.
+</ResponseField>
+
+<ResponseField name="longitude" type="number">
+  Default map center longitude on login.
+</ResponseField>
+
+<ResponseField name="zoom" type="integer">
+  Default map zoom level on login.
+</ResponseField>
+
+<ResponseField name="coordinateFormat" type="string">
+  Preferred coordinate display format (e.g., `dd`, `ddmm`, `ddmmss`).
+</ResponseField>
+
+<ResponseField name="poiLayer" type="string">
+  External point-of-interest layer URL configured for the user.
+</ResponseField>
+
+<ResponseField name="totpKey" type="string">
+  TOTP secret key for two-factor authentication. Set via `POST /api/users/totp`.
+</ResponseField>
+
+<ResponseField name="temporary" type="boolean">
+  When `true`, the user is a temporary share account. Temporary users cannot receive announcement notifications.
+</ResponseField>
+
+<ResponseField name="attributes" type="object">
+  Additional custom user attributes.
+</ResponseField>
+
+---
+
+## Users API
+
+### GET /api/users
+
+List users. Administrators see all users. Managers see their subordinate users. Regular users receive only their own record.
+
+<ParamField query="userId" type="integer">
+  Return users managed by a specific user. Requires manager or admin role.
+</ParamField>
+
+<ParamField query="deviceId" type="integer">
+  Return users who have access to the specified device. Requires manager or admin role.
+</ParamField>
+
+<ParamField query="keyword" type="string">
+  Filter by name or email (case-insensitive).
+</ParamField>
+
+<ParamField query="limit" type="integer">
+  Maximum number of records to return.
+</ParamField>
+
+<ParamField query="offset" type="integer">
+  Records to skip for pagination.
+</ParamField>
+
+<ParamField query="excludeAttributes" type="boolean">
+  Omit the `attributes` field from each user in the response.
+</ParamField>
+
+```bash
+curl -u admin:password http://localhost:8082/api/users
+```
+
+---
+
+### POST /api/users
+
+Create a new user account. This endpoint is publicly accessible when server registration is enabled, allowing self-registration. When called by an administrator or manager, the restrictions are relaxed.
+
+<ParamField body="name" type="string" required>
+  Display name.
+</ParamField>
+
+<ParamField body="email" type="string" required>
+  Login email address.
+</ParamField>
+
+<ParamField body="password" type="string" required>
+  Plain-text password. The server hashes it before storage.
+</ParamField>
+
+```bash
+curl -X POST -u admin:password \
+  -H 'Content-Type: application/json' \
+  -d '{
+    "name": "Jane Smith",
+    "email": "jane@example.com",
+    "password": "SecurePassword123",
+    "phone": "+14155550199"
+  }' \
+  http://localhost:8082/api/users
+```
+
+```json
+{
+  "id": 2,
+  "name": "Jane Smith",
+  "email": "jane@example.com",
+  "phone": "+14155550199",
+  "administrator": false,
+  "readonly": false,
+  "disabled": false,
+  "deviceLimit": 0,
+  "userLimit": 0,
+  "attributes": {}
+}
+```
+
+---
+
+### GET /api/users/{id}
+
+Fetch a single user by their ID.
+
+<ParamField path="id" type="integer" required>
+  User identifier.
+</ParamField>
+
+```bash
+curl -u admin:password http://localhost:8082/api/users/2
+```
+
+---
+
+### PUT /api/users/{id}
+
+Update an existing user. Send the full user object including unchanged fields.
+
+<ParamField path="id" type="integer" required>
+  User identifier.
+</ParamField>
+
+```bash
+curl -X PUT -u admin:password \
+  -H 'Content-Type: application/json' \
+  -d '{
+    "id": 2,
+    "name": "Jane Smith",
+    "email": "jane@example.com",
+    "phone": "+14155550199",
+    "deviceLimit": 10,
+    "attributes": {}
+  }' \
+  http://localhost:8082/api/users/2
+```
+
+---
+
+### DELETE /api/users/{id}
+
+Delete a user account. If a user deletes their own account, the session is also terminated.
+
+<ParamField path="id" type="integer" required>
+  User identifier.
+</ParamField>
+
+```bash
+curl -X DELETE -u admin:password http://localhost:8082/api/users/2
+```
+
+Returns `204 No Content` on success.
+
+---
+
+### POST /api/users/totp
+
+Generate a new TOTP (Time-based One-Time Password) secret key. The returned base32 string can be imported into an authenticator app. This endpoint is accessible without authentication so users can set up TOTP before their first login if required by server policy.
+
+```bash
+curl -X POST http://localhost:8082/api/users/totp
+```
+
+Returns a base32 TOTP secret as plain text:
+
+```
+JBSWY3DPEHPK3PXP
+```
+
+<Note>
+  TOTP enforcement is controlled by server settings `web.totpEnable` and `web.totpForce`. When `totpForce` is enabled, registration fails unless `totpKey` is set.
+</Note>
+
+---
+
+## Permissions API
+
+The Permissions API creates and removes links between objects. The same endpoint handles all association types — the server determines the relationship from the field names provided in the request body. Order matters: the first field is the "owner" side and the second is the "property" side.
+
+### Permission Pair Types
+
+| Body | Effect |
+|------|--------|
+| `{"userId": X, "deviceId": Y}` | Give user X access to device Y |
+| `{"userId": X, "groupId": Y}` | Give user X access to group Y |
+| `{"userId": X, "geofenceId": Y}` | Give user X access to geofence Y |
+| `{"userId": X, "notificationId": Y}` | Link notification Y to user X |
+| `{"userId": X, "calendarId": Y}` | Give user X access to calendar Y |
+| `{"userId": X, "driverId": Y}` | Give user X access to driver Y |
+| `{"userId": X, "attributeId": Y}` | Give user X access to computed attribute Y |
+| `{"userId": X, "commandId": Y}` | Give user X access to saved command Y |
+| `{"userId": X, "managedUserId": Y}` | Make user Y a subordinate of manager X |
+| `{"deviceId": X, "geofenceId": Y}` | Apply geofence Y to device X |
+| `{"deviceId": X, "driverId": Y}` | Assign driver Y to device X |
+| `{"deviceId": X, "attributeId": Y}` | Apply computed attribute Y to device X |
+| `{"groupId": X, "geofenceId": Y}` | Apply geofence Y to all devices in group X |
+| `{"groupId": X, "notificationId": Y}` | Apply notification Y to all devices in group X |
+
+---
+
+### POST /api/permissions
+
+Create a single permission link.
+
+<ParamField body="(pair fields)" type="object" required>
+  A JSON object with exactly two `*Id` fields matching one of the supported pair types above.
+</ParamField>
+
+```bash
+# Give user 2 access to device 1
+curl -X POST -u admin:password \
+  -H 'Content-Type: application/json' \
+  -d '{"userId":2,"deviceId":1}' \
+  http://localhost:8082/api/permissions
+
+# Apply geofence 1 to device 1
+curl -X POST -u admin:password \
+  -H 'Content-Type: application/json' \
+  -d '{"deviceId":1,"geofenceId":1}' \
+  http://localhost:8082/api/permissions
+
+# Make user 3 a subordinate of manager user 2
+curl -X POST -u admin:password \
+  -H 'Content-Type: application/json' \
+  -d '{"userId":2,"managedUserId":3}' \
+  http://localhost:8082/api/permissions
+```
+
+Returns `204 No Content` on success.
+
+---
+
+### DELETE /api/permissions
+
+Remove a permission link. The request body uses the same format as POST.
+
+```bash
+# Remove user 2's access to device 1
+curl -X DELETE -u admin:password \
+  -H 'Content-Type: application/json' \
+  -d '{"userId":2,"deviceId":1}' \
+  http://localhost:8082/api/permissions
+```
+
+Returns `204 No Content` on success.
+
+---
+
+### POST /api/permissions/bulk
+
+Create multiple permission links in a single request. All entries in the array must be the same pair type.
+
+```bash
+# Give user 2 access to devices 1, 3, and 5 in one call
+curl -X POST -u admin:password \
+  -H 'Content-Type: application/json' \
+  -d '[
+    {"userId":2,"deviceId":1},
+    {"userId":2,"deviceId":3},
+    {"userId":2,"deviceId":5}
+  ]' \
+  http://localhost:8082/api/permissions/bulk
+```
+
+Returns `204 No Content` on success.
+
+---
+
+### DELETE /api/permissions/bulk
+
+Remove multiple permission links in a single request.
+
+```bash
+curl -X DELETE -u admin:password \
+  -H 'Content-Type: application/json' \
+  -d '[
+    {"userId":2,"deviceId":1},
+    {"userId":2,"deviceId":3}
+  ]' \
+  http://localhost:8082/api/permissions/bulk
+```
+
+---
+
+### GET /api/permissions
+
+Query existing permission links. Provide exactly two `*Id` query parameters. Use `0` on one side to mean "any".
+
+```bash
+# List all devices linked to user 2
+curl -u admin:password \
+  'http://localhost:8082/api/permissions?userId=2&deviceId=0'
+
+# List all users who have access to device 1
+curl -u admin:password \
+  'http://localhost:8082/api/permissions?userId=0&deviceId=1'
+```
+
+<Note>
+  `GET /api/permissions` is restricted to administrators.
+</Note>
+
+---
+
+## Groups API
+
+Groups allow multiple devices to be managed collectively. A device can belong to one group. Groups can be nested by setting a parent `groupId`. Permissions granted on a group automatically propagate to all devices inside it.
+
+### Group Object
+
+<ResponseField name="id" type="integer">
+  Unique group identifier.
+</ResponseField>
+
+<ResponseField name="name" type="string" required>
+  Group display name.
+</ResponseField>
+
+<ResponseField name="groupId" type="integer">
+  Parent group identifier for nested hierarchy. Use `0` or omit for a top-level group.
+</ResponseField>
+
+<ResponseField name="attributes" type="object">
+  Arbitrary metadata attached to the group. Can be used for protocol overrides or UI hints.
+</ResponseField>
+
+### GET /api/groups
+
+<ParamField query="all" type="boolean">Admin/manager: return all groups.</ParamField>
+<ParamField query="userId" type="integer">Return groups belonging to a specific user.</ParamField>
+<ParamField query="limit" type="integer">Maximum records to return.</ParamField>
+<ParamField query="offset" type="integer">Records to skip.</ParamField>
+<ParamField query="keyword" type="string">Filter by name.</ParamField>
+
+```bash
+curl -u admin:password http://localhost:8082/api/groups
+```
+
+### POST /api/groups
+
+```bash
+curl -X POST -u admin:password \
+  -H 'Content-Type: application/json' \
+  -d '{"name":"West Coast Fleet","groupId":0,"attributes":{}}' \
+  http://localhost:8082/api/groups
+```
+
+### PUT /api/groups/{id}
+
+```bash
+curl -X PUT -u admin:password \
+  -H 'Content-Type: application/json' \
+  -d '{"id":1,"name":"West Coast Fleet — Updated","groupId":0,"attributes":{}}' \
+  http://localhost:8082/api/groups/1
+```
+
+### DELETE /api/groups/{id}
+
+```bash
+curl -X DELETE -u admin:password http://localhost:8082/api/groups/1
+```
+
+Returns `204 No Content` on success.
+
+---
+
+## Share API
+
+The Share API generates time-limited bearer tokens that grant read-only access to a specific device or group without requiring a full user account. The token is passed as a query parameter or `Authorization: Bearer` header.
+
+### POST /api/share/device
+
+Generate a share token for a single device.
+
+The request must use `application/x-www-form-urlencoded` encoding.
+
+<ParamField body="deviceId" type="integer" required>
+  Device to share.
+</ParamField>
+
+<ParamField body="expiration" type="string (ISO 8601)" required>
+  Token expiry timestamp. After this time the token is invalid.
+</ParamField>
+
+```bash
+curl -X POST -u admin:password \
+  -d 'deviceId=1&expiration=2024-12-31T23:59:59Z' \
+  http://localhost:8082/api/share/device
+```
+
+Returns a JWT bearer token as plain text:
+
+```
+eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...
+```
+
+### POST /api/share/group
+
+Generate a share token for all devices in a group.
+
+<ParamField body="groupId" type="integer" required>
+  Group to share.
+</ParamField>
+
+<ParamField body="expiration" type="string (ISO 8601)" required>
+  Token expiry timestamp.
+</ParamField>
+
+```bash
+curl -X POST -u admin:password \
+  -d 'groupId=2&expiration=2024-12-31T23:59:59Z' \
+  http://localhost:8082/api/share/group
+```
+
+<Warning>
+  Share tokens grant unauthenticated access to real-time position data. Treat them like passwords. Use a short `expiration` time for temporary sharing scenarios. Share tokens cannot be used for announcement delivery (`temporary` accounts).
+</Warning>

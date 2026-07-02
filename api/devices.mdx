@@ -1,0 +1,314 @@
+---
+title: "Devices API — Register and Manage GPS Trackers"
+sidebarTitle: "Devices"
+description: "CRUD endpoints for GPS devices. GET /api/devices lists all accessible devices. POST creates a new device with uniqueId. Supports filtering by status and groupId."
+---
+
+The Devices API manages the registry of GPS hardware connected to a Traccar server. Every physical tracker must be registered before its data is stored. Each device has a `uniqueId` that matches the hardware identifier sent over the GPS protocol — typically the IMEI number for cellular trackers. Traccar uses this value to route incoming raw packets to the correct device record.
+
+## Device Object
+
+<ResponseField name="id" type="integer">
+  Unique identifier assigned by Traccar. Read-only; set by the server on creation.
+</ResponseField>
+
+<ResponseField name="name" type="string" required>
+  Human-friendly display label shown in the UI and reports.
+</ResponseField>
+
+<ResponseField name="uniqueId" type="string" required>
+  Hardware or protocol-specific unique identifier. Usually the IMEI. Leading and trailing whitespace is trimmed automatically.
+</ResponseField>
+
+<ResponseField name="status" type="string">
+  Current connection status. One of `online`, `offline`, or `unknown`. Read-only; computed from incoming data.
+</ResponseField>
+
+<ResponseField name="disabled" type="boolean">
+  When `true` the device is disabled by an administrator and will not process incoming data.
+</ResponseField>
+
+<ResponseField name="lastUpdate" type="string (ISO 8601)">
+  Timestamp of the most recent data packet received from the device. Read-only.
+</ResponseField>
+
+<ResponseField name="positionId" type="integer">
+  Identifier of the most recent position record. Read-only.
+</ResponseField>
+
+<ResponseField name="groupId" type="integer">
+  Parent group identifier when the device is assigned to a group. Use `0` or omit to leave ungrouped.
+</ResponseField>
+
+<ResponseField name="calendarId" type="integer">
+  Calendar identifier that restricts when the device is considered active.
+</ResponseField>
+
+<ResponseField name="phone" type="string">
+  Contact phone number used for SMS commands. Whitespace is trimmed automatically.
+</ResponseField>
+
+<ResponseField name="model" type="string">
+  Device model or hardware revision. Informational only.
+</ResponseField>
+
+<ResponseField name="contact" type="string">
+  Responsible person's contact information. Informational only.
+</ResponseField>
+
+<ResponseField name="category" type="string">
+  Free-form category used for map icon selection and grouping in the UI (e.g., `car`, `truck`, `bicycle`).
+</ResponseField>
+
+<ResponseField name="attributes" type="object">
+  Custom key-value attributes for protocol-specific settings or business data.
+</ResponseField>
+
+---
+
+## Endpoints
+
+### GET /api/devices
+
+List GPS devices accessible to the current user. Without any query parameters, returns all devices belonging to the authenticated user.
+
+<ParamField query="all" type="boolean">
+  Return all devices on the server. Requires administrator or manager role.
+</ParamField>
+
+<ParamField query="userId" type="integer">
+  Return devices belonging to a specific user. Standard users may only pass their own `userId`.
+</ParamField>
+
+<ParamField query="id" type="integer">
+  Fetch one or more specific devices by internal ID. Repeatable: `id=31&id=42`.
+</ParamField>
+
+<ParamField query="uniqueId" type="string">
+  Fetch one or more devices by hardware unique ID. Repeatable: `uniqueId=123&uniqueId=456`.
+</ParamField>
+
+<ParamField query="keyword" type="string">
+  Filter devices whose `name`, `uniqueId`, `phone`, `model`, or `contact` fields contain the keyword (case-insensitive).
+</ParamField>
+
+<ParamField query="excludeAttributes" type="boolean">
+  Omit the `attributes` field from each device in the response. Useful for performance when attributes are not needed.
+</ParamField>
+
+<ParamField query="limit" type="integer">
+  Maximum number of devices to return. Used for pagination.
+</ParamField>
+
+<ParamField query="offset" type="integer">
+  Number of records to skip. Used together with `limit` for pagination.
+</ParamField>
+
+```bash
+# All devices for the current user
+curl -u admin:password http://localhost:8082/api/devices
+
+# Devices by group
+curl -u admin:password 'http://localhost:8082/api/devices?groupId=5'
+
+# Fetch two specific devices by IMEI
+curl -u admin:password \
+  'http://localhost:8082/api/devices?uniqueId=860000000000001&uniqueId=860000000000002'
+
+# Admin: all devices on the server
+curl -u admin:password 'http://localhost:8082/api/devices?all=true'
+```
+
+---
+
+### POST /api/devices
+
+Register a new GPS device. The `name` and `uniqueId` fields are required.
+
+<ParamField body="name" type="string" required>
+  Human-friendly device label.
+</ParamField>
+
+<ParamField body="uniqueId" type="string" required>
+  Hardware unique identifier (IMEI or device-specific ID).
+</ParamField>
+
+<ParamField body="groupId" type="integer">
+  Optional parent group. Omit or set to `0` to leave ungrouped.
+</ParamField>
+
+<ParamField body="phone" type="string">
+  Phone number for SMS-based commands.
+</ParamField>
+
+<ParamField body="model" type="string">
+  Device model name. Informational only.
+</ParamField>
+
+<ParamField body="category" type="string">
+  Map icon category (e.g. `car`, `truck`, `motorbike`, `bicycle`, `person`).
+</ParamField>
+
+<ParamField body="attributes" type="object">
+  Custom attribute map for protocol overrides or business metadata.
+</ParamField>
+
+```bash
+curl -X POST -u admin:password \
+  -H 'Content-Type: application/json' \
+  -d '{
+    "name": "Fleet Vehicle 01",
+    "uniqueId": "860000000000001",
+    "phone": "+14155550100",
+    "model": "Teltonika FMB920",
+    "category": "car"
+  }' \
+  http://localhost:8082/api/devices
+```
+
+```json
+{
+  "id": 1,
+  "name": "Fleet Vehicle 01",
+  "uniqueId": "860000000000001",
+  "status": "offline",
+  "disabled": false,
+  "lastUpdate": null,
+  "positionId": 0,
+  "groupId": 0,
+  "phone": "+14155550100",
+  "model": "Teltonika FMB920",
+  "contact": null,
+  "category": "car",
+  "attributes": {}
+}
+```
+
+---
+
+### GET /api/devices/{id}
+
+Fetch a single device by its internal ID.
+
+<ParamField path="id" type="integer" required>
+  Internal device identifier returned when the device was created.
+</ParamField>
+
+```bash
+curl -u admin:password http://localhost:8082/api/devices/1
+```
+
+---
+
+### PUT /api/devices/{id}
+
+Update an existing device. Send the full device object with all fields, not just the changed ones.
+
+<ParamField path="id" type="integer" required>
+  Internal device identifier.
+</ParamField>
+
+```bash
+curl -X PUT -u admin:password \
+  -H 'Content-Type: application/json' \
+  -d '{
+    "id": 1,
+    "name": "Fleet Vehicle 01 — Updated",
+    "uniqueId": "860000000000001",
+    "category": "truck",
+    "disabled": false,
+    "attributes": {}
+  }' \
+  http://localhost:8082/api/devices/1
+```
+
+---
+
+### DELETE /api/devices/{id}
+
+Delete a device and its associated data. This action cannot be undone.
+
+<ParamField path="id" type="integer" required>
+  Internal device identifier.
+</ParamField>
+
+```bash
+curl -X DELETE -u admin:password http://localhost:8082/api/devices/1
+```
+
+Returns `204 No Content` on success.
+
+---
+
+### PUT /api/devices/{id}/accumulators
+
+Reset or override the total distance odometer and engine hours for a device. The values are written into the latest position record so they carry forward from that point.
+
+<ParamField path="id" type="integer" required>
+  Internal device identifier.
+</ParamField>
+
+<ParamField body="deviceId" type="integer" required>
+  Must match the path `{id}`.
+</ParamField>
+
+<ParamField body="totalDistance" type="number">
+  New total distance value in meters. Omit to leave unchanged.
+</ParamField>
+
+<ParamField body="hours" type="number">
+  New engine hours value in milliseconds. Omit to leave unchanged.
+</ParamField>
+
+<Warning>
+  A current position record must exist for the device before this endpoint can be called. If the device has never reported a position, the request returns `400 Bad Request`.
+</Warning>
+
+```bash
+# Reset odometer to 50 000 m (50 km)
+curl -X PUT -u admin:password \
+  -H 'Content-Type: application/json' \
+  -d '{"deviceId":1,"totalDistance":50000}' \
+  http://localhost:8082/api/devices/1/accumulators
+```
+
+Returns `204 No Content` on success.
+
+---
+
+### POST /api/devices/{id}/image
+
+Upload or replace the device image shown in the web UI. The image is stored under the device's `uniqueId` in the server media directory.
+
+<ParamField path="id" type="integer" required>
+  Internal device identifier.
+</ParamField>
+
+The request body must contain the raw image data with a content type of `image/jpeg`, `image/png`, `image/gif`, or `image/webp`. The maximum file size is 500 KB.
+
+```bash
+curl -X POST -u admin:password \
+  -H 'Content-Type: image/jpeg' \
+  --data-binary @vehicle.jpg \
+  http://localhost:8082/api/devices/1/image
+```
+
+Returns the stored filename (e.g. `device.jpg`) as plain text on success.
+
+---
+
+## Authentication
+
+All endpoints require HTTP Basic authentication or a Bearer token obtained from `POST /api/session/token`.
+
+```bash
+# Basic authentication
+curl -u username:password http://localhost:8082/api/devices
+
+# Bearer token
+curl -H 'Authorization: Bearer <token>' http://localhost:8082/api/devices
+```
+
+<Note>
+  Traccar also supports cookie-based sessions established via `POST /api/session`. Any of the three methods may be used interchangeably.
+</Note>

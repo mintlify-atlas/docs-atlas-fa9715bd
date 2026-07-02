@@ -1,0 +1,344 @@
+---
+title: "Positions API — Retrieve GPS Location Data"
+sidebarTitle: "Positions"
+description: "GET /api/positions returns current or historical GPS positions for devices. Supports JSON, KML, KMZ, CSV, and GPX export formats for track data."
+---
+
+The Positions API returns GPS location data stored by Traccar. Without time range parameters it returns the latest known position for each device accessible to the current user. When `from` and `to` are supplied alongside a `deviceId`, it returns the full historical position trail for that device within the specified time window. Traccar strongly recommends using the [WebSocket API](https://www.traccar.org/traccar-api/) for live position updates rather than polling this endpoint repeatedly.
+
+## Position Object
+
+<ResponseField name="id" type="integer">
+  Unique position record identifier.
+</ResponseField>
+
+<ResponseField name="deviceId" type="integer">
+  Identifier of the device that reported this position.
+</ResponseField>
+
+<ResponseField name="protocol" type="string">
+  Name of the device protocol that produced the message (e.g., `teltonika`, `osmand`, `gt06`).
+</ResponseField>
+
+<ResponseField name="serverTime" type="string (ISO 8601)">
+  Timestamp when the Traccar server received the message.
+</ResponseField>
+
+<ResponseField name="deviceTime" type="string (ISO 8601)">
+  Timestamp reported by the device's internal clock at the time of transmission.
+</ResponseField>
+
+<ResponseField name="fixTime" type="string (ISO 8601)">
+  Timestamp of the actual GPS fix. This is the authoritative time for the position and is used in time-range queries.
+</ResponseField>
+
+<ResponseField name="valid" type="boolean">
+  Whether the position was marked as valid by the device. Invalid positions may have degraded accuracy.
+</ResponseField>
+
+<ResponseField name="latitude" type="number">
+  Latitude in decimal degrees. Range: −90 to 90.
+</ResponseField>
+
+<ResponseField name="longitude" type="number">
+  Longitude in decimal degrees. Range: −180 to 180.
+</ResponseField>
+
+<ResponseField name="altitude" type="number">
+  Altitude above sea level in meters.
+</ResponseField>
+
+<ResponseField name="speed" type="number">
+  Speed in **knots**. Multiply by `1.852` to convert to km/h or by `1.15078` to convert to mph.
+</ResponseField>
+
+<ResponseField name="course" type="number">
+  Heading in degrees (0–360), where 0 is true north, 90 is east, and so on.
+</ResponseField>
+
+<ResponseField name="accuracy" type="number">
+  Estimated positional accuracy in meters when provided by the device or network.
+</ResponseField>
+
+<ResponseField name="address" type="string">
+  Reverse-geocoded street address if the server geocoder is enabled.
+</ResponseField>
+
+<ResponseField name="network" type="object">
+  Network metadata supplied by the device, such as cell tower or Wi-Fi access point information.
+</ResponseField>
+
+<ResponseField name="geofenceIds" type="array of integers">
+  List of geofence identifiers that contain this position at the time it was received.
+</ResponseField>
+
+<ResponseField name="attributes" type="object">
+  Dynamic key-value map of additional data reported by the device. See [Attributes](#position-attributes) below.
+</ResponseField>
+
+---
+
+## Position Attributes
+
+The `attributes` map contains device-specific telemetry. Keys are standardised across protocols where possible. Common attributes include:
+
+| Key | Type | Description |
+|-----|------|-------------|
+| `alarm` | string | Alarm type (e.g., `sos`, `overspeed`, `geofenceEnter`) |
+| `ignition` | boolean | Ignition state |
+| `motion` | boolean | Motion sensor state |
+| `odometer` | number | Total odometer in meters |
+| `totalDistance` | number | Trip-accumulated distance in meters |
+| `hours` | number | Engine hours in milliseconds |
+| `speed` | number | OBD speed in km/h (`obdSpeed` key) |
+| `rpm` | number | Engine RPM |
+| `fuel` | number | Fuel level in liters |
+| `fuelLevel` | number | Fuel level as a percentage |
+| `batteryLevel` | number | Battery charge percentage |
+| `battery` | number | Battery voltage in volts |
+| `power` | number | External power voltage in volts |
+| `charge` | boolean | Whether the device is charging |
+| `blocked` | boolean | Whether the vehicle output is blocked/immobilised |
+| `sat` | number | Number of satellites in use |
+| `hdop` | number | Horizontal dilution of precision |
+| `rssi` | number | Cellular signal strength |
+| `driverUniqueId` | string | Unique ID of the assigned driver |
+| `dtcs` | string | OBD-II diagnostic trouble codes |
+| `temp1`, `temp2`, … | number | Temperature sensor readings in °C |
+| `adc1`, `adc2`, … | number | Analog-to-digital converter values |
+| `in1`, `in2`, … | boolean | Digital input states |
+| `out1`, `out2`, … | boolean | Digital output states |
+| `io1`, `io2`, … | number | Generic I/O port values |
+| `result` | string | Response to a previously sent command |
+
+---
+
+## Endpoints
+
+### GET /api/positions
+
+Fetch position data. Behaviour depends on which parameters are provided.
+
+<ParamField query="deviceId" type="integer">
+  Filter positions for a specific device. When provided without `from`/`to`, returns the single latest known position for that device. When provided with `from`/`to`, returns the full historical trail.
+</ParamField>
+
+<ParamField query="from" type="string (ISO 8601)">
+  Start of the time range. Requires `deviceId` and `to`. Example: `2024-01-01T00:00:00Z`.
+</ParamField>
+
+<ParamField query="to" type="string (ISO 8601)">
+  End of the time range. Requires `deviceId` and `from`. Example: `2024-01-01T23:59:59Z`.
+</ParamField>
+
+<ParamField query="id" type="integer">
+  Fetch one or more positions by their internal ID. Repeatable: `id=31&id=42`. Takes precedence over other parameters when present.
+</ParamField>
+
+<ParamField query="geofenceId" type="integer">
+  When used with `deviceId`, `from`, and `to`, filters historical positions to only those inside the specified geofence.
+</ParamField>
+
+<Tabs>
+  <Tab title="Latest positions">
+    ```bash
+    # Latest position for every device accessible to the user
+    curl -u admin:password http://localhost:8082/api/positions
+
+    # Latest position for a single device
+    curl -u admin:password 'http://localhost:8082/api/positions?deviceId=1'
+    ```
+  </Tab>
+  <Tab title="Historical range">
+    ```bash
+    # All positions for device 1 on 2024-01-01
+    curl -u admin:password \
+      'http://localhost:8082/api/positions?deviceId=1&from=2024-01-01T00:00:00Z&to=2024-01-01T23:59:59Z'
+    ```
+  </Tab>
+  <Tab title="By position ID">
+    ```bash
+    # Fetch two specific position records
+    curl -u admin:password \
+      'http://localhost:8082/api/positions?id=1001&id=1002'
+    ```
+  </Tab>
+</Tabs>
+
+**Example response:**
+
+```json
+[
+  {
+    "id": 1001,
+    "deviceId": 1,
+    "protocol": "teltonika",
+    "serverTime": "2024-01-01T12:00:05Z",
+    "deviceTime": "2024-01-01T12:00:00Z",
+    "fixTime": "2024-01-01T12:00:00Z",
+    "valid": true,
+    "latitude": 37.7749,
+    "longitude": -122.4194,
+    "altitude": 15.0,
+    "speed": 13.5,
+    "course": 270.0,
+    "accuracy": 5.0,
+    "address": "Market St, San Francisco, CA",
+    "network": {},
+    "geofenceIds": [],
+    "attributes": {
+      "ignition": true,
+      "motion": true,
+      "batteryLevel": 87,
+      "odometer": 125340.0
+    }
+  }
+]
+```
+
+---
+
+### DELETE /api/positions
+
+Delete all positions for a device within a time window. Requires `deviceId`, `from`, and `to`.
+
+<ParamField query="deviceId" type="integer" required>
+  Device whose positions should be deleted.
+</ParamField>
+
+<ParamField query="from" type="string (ISO 8601)" required>
+  Start of the deletion window.
+</ParamField>
+
+<ParamField query="to" type="string (ISO 8601)" required>
+  End of the deletion window.
+</ParamField>
+
+```bash
+curl -X DELETE -u admin:password \
+  'http://localhost:8082/api/positions?deviceId=1&from=2024-01-01T00:00:00Z&to=2024-01-01T23:59:59Z'
+```
+
+Returns `204 No Content` on success.
+
+---
+
+### DELETE /api/positions/{id}
+
+Delete a single position record by its ID.
+
+<ParamField path="id" type="integer" required>
+  Position record identifier.
+</ParamField>
+
+```bash
+curl -X DELETE -u admin:password http://localhost:8082/api/positions/1001
+```
+
+Returns `204 No Content` on success.
+
+---
+
+### GET /api/positions/kml and /api/positions/kmz
+
+Export positions as a KML or KMZ file for use in Google Earth, Google Maps, or GIS tools.
+
+<ParamField query="deviceId" type="integer" required>
+  Device to export track data for.
+</ParamField>
+
+<ParamField query="from" type="string (ISO 8601)" required>
+  Start of the time range.
+</ParamField>
+
+<ParamField query="to" type="string (ISO 8601)" required>
+  End of the time range.
+</ParamField>
+
+<ParamField query="geofenceId" type="integer">
+  Filter exported positions to those inside the specified geofence.
+</ParamField>
+
+```bash
+# KML
+curl -u admin:password \
+  'http://localhost:8082/api/positions/kml?deviceId=1&from=2024-01-01T00:00:00Z&to=2024-01-01T23:59:59Z' \
+  -o track.kml
+
+# KMZ (compressed)
+curl -u admin:password \
+  'http://localhost:8082/api/positions/kmz?deviceId=1&from=2024-01-01T00:00:00Z&to=2024-01-01T23:59:59Z' \
+  -o track.kmz
+```
+
+---
+
+### GET /api/positions/csv
+
+Export positions as a CSV file. Useful for import into spreadsheet tools.
+
+<ParamField query="deviceId" type="integer" required>
+  Device to export.
+</ParamField>
+
+<ParamField query="from" type="string (ISO 8601)" required>
+  Start of the time range.
+</ParamField>
+
+<ParamField query="to" type="string (ISO 8601)" required>
+  End of the time range.
+</ParamField>
+
+<ParamField query="geofenceId" type="integer">
+  Filter exported positions to those inside the specified geofence.
+</ParamField>
+
+```bash
+curl -u admin:password \
+  'http://localhost:8082/api/positions/csv?deviceId=1&from=2024-01-01T00:00:00Z&to=2024-01-01T23:59:59Z' \
+  -o positions.csv
+```
+
+---
+
+### GET /api/positions/gpx
+
+Export positions as a GPX (GPS Exchange Format) file. Compatible with navigation and mapping applications.
+
+<ParamField query="deviceId" type="integer" required>
+  Device to export.
+</ParamField>
+
+<ParamField query="from" type="string (ISO 8601)" required>
+  Start of the time range.
+</ParamField>
+
+<ParamField query="to" type="string (ISO 8601)" required>
+  End of the time range.
+</ParamField>
+
+<ParamField query="geofenceId" type="integer">
+  Filter exported positions to those inside the specified geofence.
+</ParamField>
+
+```bash
+curl -u admin:password \
+  'http://localhost:8082/api/positions/gpx?deviceId=1&from=2024-01-01T00:00:00Z&to=2024-01-01T23:59:59Z' \
+  -o track.gpx
+```
+
+---
+
+## Export Format Summary
+
+<Note>
+  The export endpoints (`/kml`, `/kmz`, `/csv`, `/gpx`) always require `deviceId`, `from`, and `to`. They trigger a file download with an appropriate `Content-Disposition` header.
+</Note>
+
+| Endpoint | Content-Type | Use case |
+|----------|--------------|----------|
+| `GET /api/positions` | `application/json` | Programmatic access |
+| `GET /api/positions/kml` | `application/vnd.google-earth.kml+xml` | Google Earth / Maps |
+| `GET /api/positions/kmz` | `application/vnd.google-earth.kmz` | Google Earth (compressed) |
+| `GET /api/positions/csv` | `text/csv` | Spreadsheet import |
+| `GET /api/positions/gpx` | `application/gpx+xml` | Navigation apps, Garmin, QGIS |

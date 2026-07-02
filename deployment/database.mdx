@@ -1,0 +1,177 @@
+---
+title: "Configure a Database for Traccar"
+sidebarTitle: "Database Setup"
+description: "Connect Traccar to MySQL, PostgreSQL, MariaDB, or Microsoft SQL Server. Includes JDBC URL formats, connection pool settings, and schema migration."
+---
+
+Traccar uses [Liquibase](https://www.liquibase.org/) for schema management — it automatically creates and migrates all tables on startup. This means you never need to run SQL migration scripts by hand; simply point Traccar at a new (empty) database and it will build the schema on first boot, and apply any structural changes when you upgrade. The default embedded H2 database is convenient for evaluation, but it does not support concurrent connections or replication. For any production or multi-user deployment, switch to MySQL or PostgreSQL.
+
+## Supported Databases
+
+| Database | JDBC Driver | Notes |
+|---|---|---|
+| H2 | Built-in | Default; single-file, no concurrency — not for production |
+| MySQL 8+ | `com.mysql.cj.jdbc.Driver` | Recommended for most production deployments |
+| MariaDB | `org.mariadb.jdbc.Driver` | MySQL-compatible drop-in replacement |
+| PostgreSQL 12+ | `org.postgresql.Driver` | Full support; good for large deployments |
+| Microsoft SQL Server | `com.microsoft.sqlserver.jdbc.SQLServerDriver` | Supported |
+| TimescaleDB | `org.postgresql.Driver` | PostgreSQL extension for time-series workloads |
+
+## MySQL Configuration
+
+### Create the database
+
+```sql
+CREATE DATABASE traccar CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
+CREATE USER 'traccar'@'%' IDENTIFIED BY 'your_password';
+GRANT ALL PRIVILEGES ON traccar.* TO 'traccar'@'%';
+FLUSH PRIVILEGES;
+```
+
+### traccar.xml entries
+
+```xml
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE properties SYSTEM 'http://java.sun.com/dtd/properties.dtd'>
+<properties>
+
+    <entry key='database.driver'>com.mysql.cj.jdbc.Driver</entry>
+    <entry key='database.url'>jdbc:mysql://localhost/traccar?serverTimezone=UTC&amp;allowMultiQueries=true&amp;autoReconnect=true&amp;useSSL=false</entry>
+    <entry key='database.user'>traccar</entry>
+    <entry key='database.password'>your_password</entry>
+
+</properties>
+```
+
+For a full production URL with character-set and session-variable flags (recommended):
+
+```xml
+<entry key='database.url'>jdbc:mysql://localhost/traccar?zeroDateTimeBehavior=round&amp;serverTimezone=UTC&amp;allowPublicKeyRetrieval=true&amp;useSSL=false&amp;allowMultiQueries=true&amp;autoReconnect=true&amp;useUnicode=yes&amp;characterEncoding=UTF-8&amp;sessionVariables=sql_mode=''</entry>
+```
+
+## PostgreSQL Configuration
+
+### Create the database
+
+```sql
+CREATE DATABASE traccar;
+CREATE USER traccar WITH PASSWORD 'your_password';
+GRANT ALL PRIVILEGES ON DATABASE traccar TO traccar;
+```
+
+### traccar.xml entries
+
+```xml
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE properties SYSTEM 'http://java.sun.com/dtd/properties.dtd'>
+<properties>
+
+    <entry key='database.driver'>org.postgresql.Driver</entry>
+    <entry key='database.url'>jdbc:postgresql://localhost/traccar</entry>
+    <entry key='database.user'>traccar</entry>
+    <entry key='database.password'>your_password</entry>
+
+</properties>
+```
+
+## MariaDB Configuration
+
+MariaDB uses its own JDBC driver but otherwise accepts the same database and JDBC URL structure as MySQL:
+
+```xml
+<entry key='database.driver'>org.mariadb.jdbc.Driver</entry>
+<entry key='database.url'>jdbc:mariadb://localhost/traccar?serverTimezone=UTC&amp;allowMultiQueries=true</entry>
+<entry key='database.user'>traccar</entry>
+<entry key='database.password'>your_password</entry>
+```
+
+## TimescaleDB Configuration
+
+TimescaleDB is a PostgreSQL extension that partitions `tc_positions` into time-ordered chunks, dramatically accelerating queries that filter by timestamp. Connect to it exactly like PostgreSQL:
+
+```xml
+<entry key='database.driver'>org.postgresql.Driver</entry>
+<entry key='database.url'>jdbc:postgresql://localhost/traccar</entry>
+<entry key='database.user'>traccar</entry>
+<entry key='database.password'>your_password</entry>
+```
+
+<Note>
+When using TimescaleDB, set `database.positionPeriod` to a value matching your data-retention window (e.g. `2592000` for 30 days). This prevents Traccar from scanning all historical time chunks when resolving the latest position per device, which would otherwise cause full-table scans across every partition.
+</Note>
+
+## Connection Pool Settings
+
+Traccar uses HikariCP under the hood. The following keys in `traccar.xml` control pool behaviour:
+
+| Key | Default | Description |
+|---|---|---|
+| `database.maxPoolSize` | `20` | Maximum number of connections held open in the pool. Raise this if you see connection wait timeouts under heavy load. |
+| `database.maxLifetime` | HikariCP default | Maximum lifetime in milliseconds of a connection before it is retired and replaced. Useful when a firewall or load balancer silently drops idle connections. |
+| `database.checkConnection` | `SELECT 1` | SQL query used to validate a connection before handing it to the application. For Oracle, use `SELECT 1 FROM DUAL`. |
+
+Example — tuning for a busy server:
+
+```xml
+<entry key='database.maxPoolSize'>40</entry>
+<entry key='database.maxLifetime'>1800000</entry>
+<entry key='database.checkConnection'>SELECT 1</entry>
+```
+
+## Schema Management
+
+Traccar manages all schema changes through Liquibase. On every startup it compares the database state against its changelog and applies any pending changesets. As a result:
+
+- **Do not manually add, rename, or drop columns** in Traccar tables. Liquibase tracks the schema state by checksum; unexpected changes will prevent startup.
+- **Upgrades are non-destructive** — Liquibase never drops tables or columns on its own, so downgrades can be performed by restoring a database backup.
+- All Traccar tables use the `tc_` prefix: `tc_devices`, `tc_positions`, `tc_events`, `tc_geofences`, `tc_users`, and so on.
+
+## Position Retention
+
+By default Traccar retains positions indefinitely. To automatically purge positions older than a rolling window, set `database.positionPeriod`:
+
+```xml
+<!-- Retain positions for 90 days (7,776,000 seconds is the built-in default) -->
+<entry key='database.positionPeriod'>7776000</entry>
+
+<!-- Retain positions for 30 days -->
+<entry key='database.positionPeriod'>2592000</entry>
+
+<!-- Disable the limit (keep all positions) -->
+<entry key='database.positionPeriod'>0</entry>
+```
+
+The value is in **seconds**. When set, Traccar filters position queries to this time window, which limits the scan range and keeps query times predictable as the table grows.
+
+## Batch Position Inserts
+
+For high-throughput deployments with many active devices, you can improve insert performance by enabling batched writes. Traccar accumulates position records for the configured interval and flushes them as a single JDBC batch:
+
+```xml
+<!-- Flush every 500 ms; write up to 100 positions per batch -->
+<entry key='database.positionBatchInterval'>500</entry>
+<entry key='database.positionBatchSize'>100</entry>
+```
+
+This trades a small amount of latency (positions appear in the database up to `positionBatchInterval` ms after receipt) for significantly higher throughput on busy servers.
+
+## Device Auto-Registration
+
+<Note>
+When `database.registerUnknown` is enabled, Traccar automatically creates a device record the first time it receives data from an unknown identifier. This is useful for zero-touch provisioning but should be used with care on public-facing servers, as any device can register itself.
+</Note>
+
+```xml
+<!-- Automatically register new devices -->
+<entry key='database.registerUnknown'>true</entry>
+
+<!-- Assign a default category to auto-registered devices -->
+<entry key='database.registerUnknown.defaultCategory'>tracker</entry>
+
+<!-- Assign auto-registered devices to a group (use the group's numeric ID) -->
+<entry key='database.registerUnknown.defaultGroupId'>1</entry>
+```
+
+<Warning>
+Do not use the embedded H2 database in production. H2 does not support concurrent write access from multiple threads in server mode and cannot be replicated or backed up hot. Data corruption is possible under concurrent load, and there is no migration path to a multi-user RDBMS without exporting and reimporting all records.
+</Warning>

@@ -1,0 +1,309 @@
+---
+title: "Configure Traccar Notifications and Alerts"
+sidebarTitle: "Notifications"
+description: "Set up email, SMS, Telegram, Firebase, Pushover, and WhatsApp notifications in Traccar. Configure SMTP, Twilio, and webhook-based notificators."
+---
+
+Traccar supports multiple notification channels, called *notificators*. Each channel is configured in `traccar.xml` by adding the relevant keys for that notificator. Individual users then subscribe to specific event types through the web interface or API — notifications are delivered only to users who have subscribed. Multiple notificators can be active simultaneously.
+
+The set of enabled notificators is controlled by the `notificator.types` key:
+
+```xml
+<!-- Enable web push, email, and SMS -->
+<entry key='notificator.types'>web,mail,sms</entry>
+```
+
+The default value is `web,mail,command`. Add additional notificator names (comma-separated) to enable them.
+
+<Note>
+  Users configure their notification subscriptions per-device through **Settings → Notifications** in the web interface or via `POST /api/notifications`. The server configuration only enables the channels; users must subscribe to receive alerts.
+</Note>
+
+---
+
+## Notification timing
+
+| Key | Type | Default | Description |
+|-----|------|---------|-------------|
+| `notificator.timeThreshold` | long | `900000` (15 min) | If an event's timestamp is older than this value in milliseconds, the notification is suppressed. Prevents a flood of stale alerts after a server restart or device reconnect. |
+
+---
+
+## Available notificators
+
+<Accordion title="Email (SMTP)">
+
+Traccar sends email notifications using JavaMail via SMTP. Configure a mail server in `traccar.xml` under the `mail.smtp.*` namespace.
+
+**Notificator name:** `mail`
+
+| Key | Type | Default | Description |
+|-----|------|---------|-------------|
+| `mail.smtp.host` | string | — | SMTP server hostname or IP address. |
+| `mail.smtp.port` | integer | `25` | SMTP server port. Common values: `25` (plain), `587` (STARTTLS), `465` (SSL). |
+| `mail.smtp.starttls.enable` | boolean | `false` | Enable STARTTLS to upgrade the connection to TLS before sending credentials. Recommended for port 587. |
+| `mail.smtp.starttls.required` | boolean | `false` | Require STARTTLS. If the server doesn't support it, the connection fails rather than proceeding unencrypted. |
+| `mail.smtp.ssl.enable` | boolean | `false` | Use SSL from the start of the connection (implicit TLS). Use with port 465. |
+| `mail.smtp.ssl.trust` | string | — | Trusted hostnames for SSL. Set to `*` to trust all hosts, or a space-separated list of specific hostnames. |
+| `mail.smtp.ssl.protocols` | string | — | SSL protocol versions to enable (e.g. `TLSv1.2 TLSv1.3`). |
+| `mail.smtp.username` | string | — | SMTP authentication username (usually the sender email address). |
+| `mail.smtp.password` | string | — | SMTP authentication password or app-specific password. |
+| `mail.smtp.from` | string | — | Sender email address for the `From:` header. |
+| `mail.smtp.fromName` | string | — | Display name for the sender (the personal name part of the `From:` address). |
+| `mail.smtp.systemOnly` | boolean | `false` | Restrict global SMTP configuration to system messages only (e.g. password reset emails). Users cannot use this config for their own notifications. |
+| `mail.smtp.ignoreUserConfig` | boolean | `false` | Force server-level SMTP settings and ignore any per-user SMTP attributes. |
+
+**Gmail example (app password required for 2FA accounts):**
+
+```xml
+<entry key='mail.smtp.host'>smtp.gmail.com</entry>
+<entry key='mail.smtp.port'>587</entry>
+<entry key='mail.smtp.starttls.enable'>true</entry>
+<entry key='mail.smtp.username'>your@gmail.com</entry>
+<entry key='mail.smtp.password'>your_app_password</entry>
+<entry key='mail.smtp.from'>your@gmail.com</entry>
+```
+
+**Office 365 / Microsoft 365 example:**
+
+```xml
+<entry key='mail.smtp.host'>smtp.office365.com</entry>
+<entry key='mail.smtp.port'>587</entry>
+<entry key='mail.smtp.starttls.enable'>true</entry>
+<entry key='mail.smtp.starttls.required'>true</entry>
+<entry key='mail.smtp.username'>your@company.com</entry>
+<entry key='mail.smtp.password'>your_password</entry>
+<entry key='mail.smtp.from'>your@company.com</entry>
+```
+
+**Self-hosted / generic SMTP:**
+
+```xml
+<entry key='mail.smtp.host'>mail.example.com</entry>
+<entry key='mail.smtp.port'>465</entry>
+<entry key='mail.smtp.ssl.enable'>true</entry>
+<entry key='mail.smtp.username'>traccar@example.com</entry>
+<entry key='mail.smtp.password'>password</entry>
+<entry key='mail.smtp.from'>traccar@example.com</entry>
+<entry key='mail.smtp.fromName'>Traccar GPS Server</entry>
+```
+
+</Accordion>
+
+<Accordion title="Telegram">
+
+Send notifications as Telegram messages via the Telegram Bot API. Each notification is sent to a configured chat (group or individual). Optionally, a live location message is also sent.
+
+**Notificator name:** `telegram`
+
+| Key | Type | Default | Description |
+|-----|------|---------|-------------|
+| `notificator.telegram.key` | string | — | Telegram Bot API token. Obtain from [@BotFather](https://t.me/BotFather) on Telegram. |
+| `notificator.telegram.chatId` | string | — | Default Telegram chat ID to send notifications to. Individual users can override this with a `telegramChatId` user attribute. |
+| `notificator.telegram.sendLocation` | boolean | `false` | When `true`, Traccar also sends a Telegram location message (pin on map) in addition to the text notification. |
+| `notificator.telegram.proxy.url` | string | — | HTTP/SOCKS proxy URL for the Telegram API connection. Useful in regions where Telegram is restricted. Format: `socks5://user:pass@host:port`. |
+
+```xml
+<entry key='notificator.types'>web,mail,telegram</entry>
+<entry key='notificator.telegram.key'>1234567890:AAFxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx</entry>
+<entry key='notificator.telegram.chatId'>-100123456789</entry>
+<entry key='notificator.telegram.sendLocation'>true</entry>
+```
+
+<Note>
+  To find your chat ID, add the bot to a group and send a message, then check the Telegram Bot API `getUpdates` endpoint. For individual chats, you can use the [@userinfobot](https://t.me/userinfobot).
+</Note>
+
+</Accordion>
+
+<Accordion title="Firebase Cloud Messaging (Push Notifications)">
+
+Send push notifications to Android and iOS devices using Firebase Cloud Messaging (FCM). This is typically used with the Traccar Manager mobile app or a custom Android/iOS application.
+
+**Notificator name:** `firebase`
+
+| Key | Type | Default | Description |
+|-----|------|---------|-------------|
+| `notificator.firebase.serviceAccount` | string | — | Full JSON content of the Firebase service account credentials file. Obtain from the Firebase Console under **Project Settings → Service Accounts → Generate new private key**. Paste the entire JSON as the value. |
+| `notificator.firebase.mode` | string | `direct` | Message delivery mode. `direct` — notification payload only (default). `data` — data-only payload for the client app to handle silently. `mixed` — both notification and data payloads. |
+
+```xml
+<entry key='notificator.firebase.serviceAccount'>{"type":"service_account","project_id":"your-project",...}</entry>
+<entry key='notificator.firebase.mode'>direct</entry>
+```
+
+The `notificationTokens` user attribute stores the FCM registration tokens for each user's devices (comma-separated). These are populated automatically by the Traccar Manager app.
+
+</Accordion>
+
+<Accordion title="Pushover">
+
+Send push notifications to iOS, Android, and desktop devices via the [Pushover](https://pushover.net) service.
+
+**Notificator name:** `pushover`
+
+| Key | Type | Default | Description |
+|-----|------|---------|-------------|
+| `notificator.pushover.token` | string | — | Pushover application/API token. Create an application at pushover.net to get this. |
+| `notificator.pushover.user` | string | — | Default Pushover user key. Individual users can override this with a `pushoverUserKey` attribute, and specify target devices with a `pushoverDeviceNames` attribute. |
+
+```xml
+<entry key='notificator.types'>web,mail,pushover</entry>
+<entry key='notificator.pushover.token'>azGDORePK8gMaC0QOYAMyEEuzJnyUi</entry>
+<entry key='notificator.pushover.user'>uQiRzpo4DXghDmr9QzzfQu27cmVRsG</entry>
+```
+
+</Accordion>
+
+<Accordion title="SMS (HTTP gateway or AWS SNS)">
+
+Traccar supports SMS notifications through two backends: a generic HTTP SMS gateway, or Amazon Web Services SNS.
+
+**Notificator name:** `sms`
+
+The SMS message is sent to the phone number stored in the user's profile (`User.phone` field).
+
+**Generic HTTP SMS Gateway:**
+
+| Key | Type | Default | Description |
+|-----|------|---------|-------------|
+| `sms.http.url` | string | — | Full URL of the SMS API endpoint. Enables SMS sending via this gateway. |
+| `sms.http.authorizationHeader` | string | `Authorization` | HTTP header name for authentication. |
+| `sms.http.authorization` | string | — | Authorization header value (takes precedence over user/password). |
+| `sms.http.user` | string | — | Basic authentication username for the SMS API. |
+| `sms.http.password` | string | — | Basic authentication password for the SMS API. |
+| `sms.http.template` | string | — | Request body template. Use `{phone}` and `{message}` placeholders. If the value starts with `{` or `[`, it is treated as JSON. |
+
+**AWS SNS:**
+
+| Key | Type | Default | Description |
+|-----|------|---------|-------------|
+| `sms.aws.access` | string | — | AWS Access Key ID with SNS permissions. |
+| `sms.aws.secret` | string | — | AWS Secret Access Key. |
+| `sms.aws.region` | string | — | AWS region for the SNS service (e.g. `us-east-1`). Use a region that supports SMS messaging. |
+
+```xml
+<!-- HTTP gateway example (generic) -->
+<entry key='sms.http.url'>https://api.smsprovider.com/send</entry>
+<entry key='sms.http.authorization'>Bearer your_api_key</entry>
+<entry key='sms.http.template'>{"to":"{phone}","text":"{message}"}</entry>
+
+<!-- AWS SNS example -->
+<entry key='sms.aws.access'>AKIAIOSFODNN7EXAMPLE</entry>
+<entry key='sms.aws.secret'>wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY</entry>
+<entry key='sms.aws.region'>us-east-1</entry>
+```
+
+</Accordion>
+
+<Accordion title="WhatsApp (Meta Cloud API)">
+
+Send WhatsApp messages using the Meta (Facebook) WhatsApp Cloud API. Messages are sent using a pre-approved message template.
+
+**Notificator name:** `whatsapp`
+
+| Key | Type | Default | Description |
+|-----|------|---------|-------------|
+| `notificator.whatsapp.token` | string | — | Permanent access token from the Meta for Developers portal. |
+| `notificator.whatsapp.phoneNumberId` | string | — | WhatsApp phone number ID from the Meta Business Manager. |
+| `notificator.whatsapp.templateName` | string | — | Name of the approved WhatsApp message template. |
+| `notificator.whatsapp.templateLanguage` | string | `en_US` | Language code for the message template. |
+
+Messages are sent to the phone number stored in the user's profile. The notification text is passed as the first body parameter of the template.
+
+```xml
+<entry key='notificator.types'>web,mail,whatsapp</entry>
+<entry key='notificator.whatsapp.token'>EAAxxxxxxxxxxxx</entry>
+<entry key='notificator.whatsapp.phoneNumberId'>123456789012345</entry>
+<entry key='notificator.whatsapp.templateName'>traccar_alert</entry>
+<entry key='notificator.whatsapp.templateLanguage'>en_US</entry>
+```
+
+</Accordion>
+
+<Accordion title="Traccar mobile app (push notifications)">
+
+Send push notifications directly to the official Traccar Manager app on Android and iOS via the Traccar push notification relay service.
+
+**Notificator name:** `traccar`
+
+| Key | Type | Default | Description |
+|-----|------|---------|-------------|
+| `notificator.traccar.key` | string | — | Traccar notification API key. Contact the Traccar project for commercial deployments. |
+
+Notification tokens (`notificationTokens` user attribute) are registered automatically when users log in via the Traccar Manager app.
+
+```xml
+<entry key='notificator.types'>web,mail,traccar</entry>
+<entry key='notificator.traccar.key'>your_traccar_notification_key</entry>
+```
+
+</Accordion>
+
+<Accordion title="Web (browser push)">
+
+Deliver in-browser notifications to users who have the Traccar web interface open. Events appear as real-time popups in the browser without any server-side configuration.
+
+**Notificator name:** `web`
+
+No configuration keys are required. Web notifications are enabled by default (`notificator.types` defaults to `web,mail,command`). The notification is delivered over the existing WebSocket connection between the browser and the server.
+
+</Accordion>
+
+---
+
+## Notification event types
+
+Users subscribe to specific event types. The following event types are available in Traccar:
+
+| Event type | Description |
+|------------|-------------|
+| `deviceOnline` | Device connected and started reporting |
+| `deviceUnknown` | Device status changed to unknown (no data for `status.timeout` seconds) |
+| `deviceOffline` | Device explicitly went offline |
+| `deviceInactive` | Device has been inactive for an extended period |
+| `deviceMoving` | Device started moving |
+| `deviceStopped` | Device stopped moving |
+| `deviceOverspeed` | Device exceeded the configured speed limit |
+| `deviceFuelDrop` | Fuel level dropped by more than the configured threshold |
+| `deviceFuelIncrease` | Fuel level increased by more than the configured threshold |
+| `geofenceEnter` | Device entered a geofence |
+| `geofenceExit` | Device exited a geofence |
+| `proximityEnter` | Linked device came within the proximity enter distance |
+| `proximityExit` | Linked device moved beyond the proximity exit distance |
+| `unaccompaniedMotion` | Device started moving with no linked device nearby |
+| `alarm` | Device sent an alarm attribute (SOS, harsh brake, crash, etc.) |
+| `ignitionOn` | Ignition turned on |
+| `ignitionOff` | Ignition turned off |
+| `maintenance` | Maintenance service interval reached |
+| `driverChanged` | Driver iButton or RFID identification changed |
+| `media` | Media file (photo/video/audio) was received |
+| `commandResult` | Result received from a sent command |
+| `queuedCommandSent` | Queued command was delivered to the device |
+
+---
+
+## Email notification templates
+
+Email and SMS notification content is generated from [Apache Velocity](https://velocity.apache.org/) templates stored in the `templates/notifications/` directory. Templates are organized by locale:
+
+```
+templates/notifications/
+├── en/           # English (default)
+│   ├── alarm.vm
+│   ├── deviceMoving.vm
+│   ├── deviceOverspeed.vm
+│   ├── geofenceEnter.vm
+│   └── ... (one .vm file per event type)
+├── de/           # German
+├── es/           # Spanish
+├── fr/           # French
+├── ru/           # Russian
+└── ...
+```
+
+To customize email content, copy a `.vm` file from `templates/notifications/en/` to the same relative path under a custom override directory and modify it. The template directory root can be changed with:
+
+```xml
+<entry key='templates.root'>/etc/traccar/templates</entry>
+```

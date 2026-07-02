@@ -1,0 +1,70 @@
+---
+title: "Traccar: Open-Source GPS Tracking System"
+sidebarTitle: "Introduction"
+description: "Traccar is a self-hosted GPS tracking server supporting 200+ device protocols, real-time tracking, geofencing, and a full REST API for fleet management."
+---
+
+Traccar is a free, open-source GPS tracking platform designed for developers, fleet operators, and system integrators who need full control over their tracking infrastructure. Unlike hosted SaaS solutions, Traccar runs entirely on your own servers — giving you data sovereignty, unlimited devices, and complete freedom to extend or integrate the system. At its core, Traccar is a high-performance Java back-end that speaks to more than 200 GPS protocols and over 2,000 models of GPS tracking hardware, from low-cost consumer trackers to professional fleet telematics units.
+
+## Architecture
+
+Traccar is composed of three independently deployable layers that work together to deliver a complete tracking solution:
+
+- **Traccar Server** — The Java-based back-end service in this repository. It listens on protocol-specific TCP/UDP ports for incoming device data, persists positions and events to a SQL database, and exposes a REST API on port 8082. This is the component you install and operate.
+- **Traccar Web App** — A separate React-based front-end ([traccar/traccar-web](https://github.com/traccar/traccar-web)) that is served by the back-end server and provides the full management UI for devices, geofences, reports, and alerts. It ships bundled inside the server package.
+- **Mobile Clients** — The [Traccar Client app](https://github.com/traccar/traccar-client) turns any Android or iOS device into a live GPS tracker. Third-party apps such as OsmAnd can also report positions using Traccar's built-in OsmAnd protocol on port 5055.
+
+The server is stateless between requests and designed to scale from a single Raspberry Pi handling a handful of personal trackers up to a cloud VM managing thousands of concurrent fleet devices.
+
+## Core Capabilities
+
+<CardGroup cols={2}>
+  <Card title="Real-Time Tracking" icon="location-dot" href="/features/tracking">
+    Monitor device positions live on an interactive map as updates arrive. Supports replay, trail visualization, and per-device status indicators.
+  </Card>
+  <Card title="Geofencing" icon="draw-polygon" href="/features/geofences">
+    Define circular or polygon geofence zones and trigger enter/exit events automatically when a device crosses a boundary.
+  </Card>
+  <Card title="Notifications & Alerts" icon="bell" href="/features/events-alerts">
+    Receive alarms for speeding, device motion, geofence violations, low battery, harsh driving, and many other configurable events via email, SMS, or push notification.
+  </Card>
+  <Card title="Reports" icon="chart-bar" href="/features/reports">
+    Generate detailed and summary reports for trips, stops, speed, fuel, events, and driver behaviour over any time window.
+  </Card>
+  <Card title="Remote Commands" icon="terminal" href="/features/commands">
+    Send configuration and control commands directly to supported devices — lock/unlock, engine cut-off, request position, set parameters, and more.
+  </Card>
+  <Card title="REST API" icon="code" href="/api/overview">
+    Every feature of the platform is accessible through a documented REST API using Basic Auth or API key authentication. Ideal for custom integrations and automation.
+  </Card>
+</CardGroup>
+
+## Deployment Approaches
+
+Traccar supports three primary deployment methods, ranging from zero-configuration quick-starts to fully customised production setups:
+
+- **Docker** — The official `traccar/traccar` image bundles the server with a custom JRE and is the fastest path to a running instance. Pre-built Docker Compose files are provided for MySQL and TimescaleDB/PostgreSQL backends. See the [Docker deployment guide](/deployment/docker) for details.
+- **Linux / Windows installer** — Official ZIP packages ship with a bundled JRE, so no Java installation is required on the target machine. A `setup.sh` script places files under `/opt/traccar` and registers a systemd service automatically. A Windows `.exe` installer registers Traccar as a Windows service.
+- **Manual build** — Developers can clone the repository and build from source using Gradle. Refer to the [build documentation](https://www.traccar.org/build/) on the official website.
+
+## Supported Databases
+
+Traccar uses standard JDBC and works with all major SQL database engines:
+
+| Database | Notes |
+|---|---|
+| **H2** | Embedded default. Zero configuration — ideal for evaluation and small deployments. Data stored in `./data/database`. |
+| **MySQL** | Recommended for production. Full schema and Compose file provided. |
+| **PostgreSQL** | Fully supported. TimescaleDB extension supported for time-series optimisation. |
+| **MariaDB** | Compatible with the MySQL driver and configuration. |
+| **Microsoft SQL Server** | Supported via JDBC. |
+
+The active database is configured through the `database.driver`, `database.url`, `database.user`, and `database.password` keys in `traccar.xml`.
+
+## License
+
+Traccar is released under the **Apache License, Version 2.0**. You are free to use, modify, and distribute the software for any purpose, including commercial use, subject to the terms of the license. The full license text is available at [apache.org/licenses/LICENSE-2.0](https://www.apache.org/licenses/LICENSE-2.0.html).
+
+<Note>
+  Free demo servers are available at [demo.traccar.org](https://demo.traccar.org), [demo2.traccar.org](https://demo2.traccar.org), [demo3.traccar.org](https://demo3.traccar.org), and [demo4.traccar.org](https://demo4.traccar.org) for API exploration and UI evaluation without running your own instance. Demo servers are shared and periodically reset — do not use them for production data.
+</Note>

@@ -1,0 +1,277 @@
+---
+title: "Install Traccar on Linux, Windows, or macOS"
+sidebarTitle: "Installation"
+description: "Download and install the Traccar server package on Linux, Windows, or macOS using the official installer. Includes service setup and first-run configuration."
+---
+
+Traccar ships as a self-contained ZIP package that bundles a custom JRE built with `jlink` — you do not need to install Java separately on the target machine. The package contains the server JAR, the bundled runtime under `jre/`, the default configuration file at `conf/traccar.xml`, and (on Linux) a ready-to-use `systemd` service unit. Simply extract, configure, and start.
+
+## System Requirements
+
+| Requirement | Minimum | Recommended |
+|---|---|---|
+| **Java** | Bundled (JRE 17+) | Bundled — no separate install needed |
+| **RAM** | 512 MB | 1 GB or more |
+| **Disk** | 200 MB (application) | 1 GB+ (application + data + logs) |
+| **OS** | Linux, Windows, macOS | Linux (production) |
+| **Database** | H2 embedded | MySQL / PostgreSQL (production) |
+
+## Installation
+
+<Tabs>
+  <Tab title="Linux">
+    ### Download
+
+    Download the latest Traccar Linux package from the GitHub Releases page. The Linux distribution is a ZIP archive labelled `traccar-linux-<version>.zip` (or `traccar-other-<version>.zip` for the platform-independent build):
+
+    ```bash
+    # Replace <version> with the latest release, e.g. 6.14.5
+    wget https://github.com/traccar/traccar/releases/latest/download/traccar-linux-64-<version>.zip -O traccar.zip
+    ```
+
+    ### Extract and Install
+
+    The `setup.sh` script included in the archive copies files to `/opt/traccar`, preserves any existing `traccar.xml` configuration, installs the systemd service unit, and enables the service:
+
+    ```bash
+    unzip traccar.zip -d traccar-setup
+    cd traccar-setup
+    sudo ./setup.sh
+    ```
+
+    The script performs these actions automatically:
+    - Copies all files to `/opt/traccar/`
+    - Installs `/etc/systemd/system/traccar.service`
+    - Runs `systemctl daemon-reload` and `systemctl enable traccar.service`
+
+    ### Systemd Service Unit
+
+    The installed service unit file is:
+
+    ```ini
+    [Unit]
+    Description=traccar
+    After=network.target
+
+    [Service]
+    Type=simple
+    WorkingDirectory=/opt/traccar
+    ExecStart=/opt/traccar/jre/bin/java -jar tracker-server.jar conf/traccar.xml
+    SyslogIdentifier=traccar
+    SuccessExitStatus=143
+    WatchdogSec=600
+    Restart=on-failure
+    RestartSec=10
+
+    [Install]
+    WantedBy=multi-user.target
+    ```
+
+    ### Manage the Service
+
+    ```bash
+    # Start the server
+    sudo systemctl start traccar
+
+    # Enable auto-start on boot (already done by setup.sh)
+    sudo systemctl enable traccar
+
+    # Check current status
+    sudo systemctl status traccar
+
+    # Stop the server
+    sudo systemctl stop traccar
+
+    # Restart after a config change
+    sudo systemctl restart traccar
+    ```
+
+    ### File Locations
+
+    | File | Path |
+    |---|---|
+    | Configuration | `/opt/traccar/conf/traccar.xml` |
+    | Application log | `/opt/traccar/logs/tracker-server.log` |
+    | Embedded database | `/opt/traccar/data/database.mv.db` |
+    | Bundled JRE | `/opt/traccar/jre/` |
+    | Server JAR | `/opt/traccar/tracker-server.jar` |
+  </Tab>
+
+  <Tab title="Windows">
+    ### Download
+
+    Download the official Windows installer from the GitHub Releases page:
+
+    - Go to [https://github.com/traccar/traccar/releases/latest](https://github.com/traccar/traccar/releases/latest)
+    - Download the file named `traccar-windows-<version>.exe`
+
+    ### Run the Installer
+
+    Double-click the `.exe` installer and follow the setup wizard. The installer:
+
+    - Extracts all files to `C:\Program Files\Traccar\`
+    - Registers Traccar as a **Windows service** named `traccar` that starts automatically with Windows
+    - Installs the bundled JRE under `C:\Program Files\Traccar\jre\`
+
+    No additional software (including Java) needs to be installed beforehand.
+
+    ### Manage the Service
+
+    Open **Services** (`services.msc`) to start, stop, or restart the `traccar` service through the GUI, or use the command line:
+
+    ```bash
+    # Start the service
+    net start traccar
+
+    # Stop the service
+    net stop traccar
+    ```
+
+    You can also manage it from PowerShell (run as Administrator):
+
+    ```bash
+    Start-Service traccar
+    Stop-Service traccar
+    Restart-Service traccar
+    Get-Service traccar
+    ```
+
+    ### File Locations
+
+    | File | Path |
+    |---|---|
+    | Configuration | `C:\Program Files\Traccar\conf\traccar.xml` |
+    | Application log | `C:\Program Files\Traccar\logs\tracker-server.log` |
+    | Embedded database | `C:\Program Files\Traccar\data\database.mv.db` |
+    | Bundled JRE | `C:\Program Files\Traccar\jre\` |
+
+    <Warning>
+      Edit `traccar.xml` using a text editor run as Administrator, or copy the file out, edit it, and copy it back. The `Program Files` directory requires elevated permissions.
+    </Warning>
+  </Tab>
+
+  <Tab title="macOS">
+    ### Download
+
+    Download the platform-independent ZIP archive from the GitHub Releases page:
+
+    - Go to [https://github.com/traccar/traccar/releases/latest](https://github.com/traccar/traccar/releases/latest)
+    - Download `traccar-other-<version>.zip`
+
+    ### Extract
+
+    ```bash
+    unzip traccar-other-<version>.zip -d /opt/traccar
+    ```
+
+    ### Run Manually
+
+    The bundled JRE is used to launch the server directly:
+
+    ```bash
+    cd /opt/traccar
+    ./jre/bin/java -jar tracker-server.jar conf/traccar.xml
+    ```
+
+    To run in the background and keep logs:
+
+    ```bash
+    cd /opt/traccar
+    ./jre/bin/java -jar tracker-server.jar conf/traccar.xml > logs/tracker-server.log 2>&1 &
+    ```
+
+    ### Auto-Start with launchd
+
+    To have Traccar start automatically at login, create a launchd plist file:
+
+    ```bash
+    sudo nano /Library/LaunchDaemons/org.traccar.server.plist
+    ```
+
+    Paste the following, adjusting paths if you extracted to a different location:
+
+    ```xml
+    <?xml version="1.0" encoding="UTF-8"?>
+    <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN"
+      "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+    <plist version="1.0">
+    <dict>
+        <key>Label</key>
+        <string>org.traccar.server</string>
+        <key>ProgramArguments</key>
+        <array>
+            <string>/opt/traccar/jre/bin/java</string>
+            <string>-jar</string>
+            <string>/opt/traccar/tracker-server.jar</string>
+            <string>/opt/traccar/conf/traccar.xml</string>
+        </array>
+        <key>WorkingDirectory</key>
+        <string>/opt/traccar</string>
+        <key>RunAtLoad</key>
+        <true/>
+        <key>StandardOutPath</key>
+        <string>/opt/traccar/logs/tracker-server.log</string>
+        <key>StandardErrorPath</key>
+        <string>/opt/traccar/logs/tracker-server.log</string>
+    </dict>
+    </plist>
+    ```
+
+    Load the daemon:
+
+    ```bash
+    sudo launchctl load /Library/LaunchDaemons/org.traccar.server.plist
+    ```
+
+    ### File Locations
+
+    | File | Path |
+    |---|---|
+    | Configuration | `/opt/traccar/conf/traccar.xml` |
+    | Application log | `/opt/traccar/logs/tracker-server.log` |
+    | Embedded database | `/opt/traccar/data/database.mv.db` |
+  </Tab>
+</Tabs>
+
+## Default Configuration
+
+After installation, the active configuration file is `conf/traccar.xml` relative to the installation directory. The default content shipped in the package uses the embedded H2 database:
+
+```xml
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE properties SYSTEM 'http://java.sun.com/dtd/properties.dtd'>
+<properties>
+
+    <!-- Documentation: https://www.traccar.org/configuration-file/ -->
+
+    <entry key='database.driver'>org.h2.Driver</entry>
+    <entry key='database.url'>jdbc:h2:./data/database</entry>
+    <entry key='database.user'>sa</entry>
+    <entry key='database.password' />
+
+</properties>
+```
+
+To switch to MySQL or PostgreSQL, replace the `database.*` entries with the appropriate driver class, JDBC URL, and credentials, then restart the service. Refer to the [configuration file reference](https://www.traccar.org/configuration-file/) for the full list of available keys.
+
+## Verify the Installation
+
+Once the service is running, open a browser and navigate to:
+
+```
+http://localhost:8082
+```
+
+On a fresh install, Traccar displays a registration page where you create the first administrator account. After completing registration you are taken to the live map view, confirming the server is operating correctly.
+
+You can also check server health without a browser:
+
+```bash
+curl http://localhost:8082/api/health
+```
+
+A response of `OK` confirms the server is up and the API is reachable.
+
+<Note>
+  Traccar listens on a separate TCP or UDP port for each GPS device protocol. After installation you must open the relevant ports in your OS firewall and any network firewall or security group in front of the server. For example, the OsmAnd protocol uses port **5055**, Teltonika uses **5027**, and GT06 uses **5023**. Port 8082 must be reachable for the web interface and API. A full list of protocol ports is available at [traccar.org/devices/](https://www.traccar.org/devices/).
+</Note>

@@ -1,0 +1,239 @@
+---
+title: "Traccar Configuration File Reference"
+sidebarTitle: "Overview"
+description: "Configure Traccar through traccar.xml. Covers server settings, timeouts, buffering, media storage, map matching, geocoding, and forward hooks."
+---
+
+All Traccar configuration lives in a single XML properties file — `traccar.xml` (or `conf/traccar.xml` depending on your installation). Keys follow a dot-notation namespace (e.g. `server.timeout`, `geocoder.type`) and values are Java-typed: strings, integers, and booleans. Changes to this file require a server restart to take effect.
+
+## File format
+
+The file is a standard Java properties XML document. Each setting is an `<entry>` element with a `key` attribute:
+
+```xml
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE properties SYSTEM 'http://java.sun.com/dtd/properties.dtd'>
+<properties>
+
+    <!-- Documentation: https://www.traccar.org/configuration-file/ -->
+
+    <entry key='database.driver'>org.h2.Driver</entry>
+    <entry key='database.url'>jdbc:h2:./data/database</entry>
+    <entry key='database.user'>sa</entry>
+    <entry key='database.password' />
+
+</properties>
+```
+
+The default installation ships with only the four database keys shown above. All other keys are optional and take documented default values when omitted.
+
+<Note>
+  You must restart the Traccar server service after modifying `traccar.xml` for changes to take effect. On Linux with systemd, run `sudo systemctl restart traccar`.
+</Note>
+
+---
+
+## Configuration categories
+
+<Accordion title="Server settings">
+
+These keys control the core networking behavior of the Traccar server process.
+
+| Key | Type | Default | Description |
+|-----|------|---------|-------------|
+| `server.timeout` | integer | `1800` | Server-wide connection timeout in seconds. Because there is no reliable way to detect a lost TCP connection, old connections remain open. This timeout reclaims those connections. 1800 seconds = 30 minutes. |
+| `server.nettyBossThreads` | integer | `0` | Number of Netty boss (acceptor) threads. If 0 or unset, Netty's own default is used (typically 1 per CPU core). |
+| `server.nettyThreads` | integer | `0` | Number of Netty worker threads. If 0 or unset, Netty's own default is used (typically 2× CPU cores). |
+| `server.statistics` | string | `https://www.traccar.org/analytics/` | URL for uploading aggregated, anonymous usage statistics. The uploaded data mirrors the statistics screen in the web interface and contains no sensitive data (no locations, no user PII). Set to an empty value to disable. |
+| `server.buffering.threshold` | long | `3000` | Position buffering threshold in milliseconds. When non-zero, incoming positions are buffered so that out-of-order messages can be reordered before processing. 3000 ms = 3 seconds. Set to `0` to disable buffering. |
+| `server.delayAcknowledgement` | boolean | — | When enabled, device acknowledgements are sent immediately before the position is written to the database. |
+
+```xml
+<!-- Tune threading for a server with many concurrent devices -->
+<entry key='server.nettyBossThreads'>2</entry>
+<entry key='server.nettyThreads'>16</entry>
+
+<!-- Extend connection timeout to 1 hour -->
+<entry key='server.timeout'>3600</entry>
+
+<!-- Disable usage statistics reporting -->
+<entry key='server.statistics'></entry>
+```
+
+</Accordion>
+
+<Accordion title="Media storage">
+
+Traccar can store photos, audio, and video files uploaded by devices that support media transfer (e.g. dashcams, iButton readers with camera attachments).
+
+| Key | Type | Default | Description |
+|-----|------|---------|-------------|
+| `media.path` | string | `./media` | Filesystem path where media files are stored. Sub-folders are automatically created per device using the device's unique ID. |
+| `media.bufferSize` | integer | `33554432` (32 MB) | Maximum size in bytes of a single in-memory media buffer accumulated from a device during transfer. Transfers that exceed this limit are dropped. |
+
+```xml
+<entry key='media.path'>/var/lib/traccar/media</entry>
+<entry key='media.bufferSize'>67108864</entry>  <!-- 64 MB -->
+```
+
+</Accordion>
+
+<Accordion title="Geocoding (reverse geocoding)">
+
+Traccar can reverse-geocode device positions to produce human-readable address strings. Multiple provider backends are supported.
+
+| Key | Type | Default | Description |
+|-----|------|---------|-------------|
+| `geocoder.enable` | boolean | `false` | Enable reverse geocoding for all incoming positions. |
+| `geocoder.type` | string | — | Geocoder provider. See the list of supported providers below. |
+| `geocoder.url` | string | — | Custom endpoint URL. Required for self-hosted providers like Nominatim or Gisgraphy. |
+| `geocoder.key` | string | — | API key for commercial geocoding providers. |
+| `geocoder.language` | string | — | Language code for localized address results (supported by Google, Nominatim, etc.). |
+| `geocoder.format` | string | `%h %r, %t, %s, %c` | Address format string. See `AddressFormat.java` for placeholder tokens. |
+| `geocoder.cacheSize` | integer | — | Number of geocoding results to cache in memory to avoid redundant API calls. |
+| `geocoder.ignorePositions` | boolean | `true` | When `true`, reverse geocoding is not run automatically on every incoming position. Combined with `geocoder.onRequest`, addresses are resolved only when needed for reports or notifications. |
+| `geocoder.reuseDistance` | integer | — | Minimum distance in meters before requesting a new reverse geocoding result. If a device has moved less than this distance, the last known address is reused. |
+| `geocoder.onRequest` | boolean | `true` | Perform geocoding when generating reports and sending notifications rather than on every position update. |
+
+**Supported geocoding providers** (set via `geocoder.type`):
+
+- `nominatim` — OpenStreetMap Nominatim (free, self-hostable)
+- `gisgraphy` — Gisgraphy (open source, self-hostable)
+- `google` — Google Maps Geocoding API (requires API key)
+- `bing` — Bing Maps (requires API key)
+- `here` — HERE Geocoding API (requires API key)
+- `mapbox` — Mapbox (requires API key)
+- `maptiler` — MapTiler (requires API key)
+- `opencage` — OpenCage Geocoding (requires API key)
+- `mapquest` — MapQuest Geocoding (requires API key)
+- `locationiq` — LocationIQ (requires API key)
+- `positionstack` — PositionStack (requires API key)
+- `geoapify` — Geoapify (requires API key)
+- `geocodefarm` — GeocodeFarm
+- `geocodexyz` — Geocode.xyz
+- `geocodejson` — Generic GeocodeJSON-compatible endpoint
+- `tomtom` — TomTom Geocoding API (requires API key)
+- `bandu` — Baidu Maps (for China deployments)
+- `tencent` — Tencent Maps (for China deployments)
+- `autonavi` — AutoNavi / Gaode (for China deployments)
+- `mapmyindia` — MapmyIndia (for India deployments)
+- `pluscodes` — Google Plus Codes / Open Location Code
+- `factual` — Factual API
+
+```xml
+<!-- Self-hosted Nominatim example -->
+<entry key='geocoder.enable'>true</entry>
+<entry key='geocoder.type'>nominatim</entry>
+<entry key='geocoder.url'>https://nominatim.example.com</entry>
+
+<!-- Google Maps example -->
+<entry key='geocoder.enable'>true</entry>
+<entry key='geocoder.type'>google</entry>
+<entry key='geocoder.key'>AIzaSy...</entry>
+<entry key='geocoder.language'>en</entry>
+<entry key='geocoder.cacheSize'>1000</entry>
+```
+
+</Accordion>
+
+<Accordion title="Map matching">
+
+Map matching snaps raw GPS coordinates to the nearest road segment before further processing. This is useful for reducing noise in urban environments.
+
+| Key | Type | Default | Description |
+|-----|------|---------|-------------|
+| `mapMatcher.enable` | boolean | `false` | Enable the map matcher. When enabled, incoming position coordinates are aligned to the nearest road segment. |
+| `mapMatcher.type` | string | `traccar` | Map matcher provider type. Currently only `traccar` is supported. |
+| `mapMatcher.url` | string | — | Map matcher service endpoint URL. |
+| `mapMatcher.key` | string | — | Map matcher provider API key. |
+
+```xml
+<entry key='mapMatcher.enable'>true</entry>
+<entry key='mapMatcher.url'>https://mapmatcher.example.com</entry>
+```
+
+</Accordion>
+
+<Accordion title="Position forward hooks">
+
+Traccar can forward every received position to an external HTTP endpoint, Kafka topic, or AMQP exchange. This is useful for integrating Traccar with other platforms or building custom data pipelines.
+
+| Key | Type | Default | Description |
+|-----|------|---------|-------------|
+| `forward.type` | string | `url` | Forwarding format. Available options: `url` (HTTP GET with query parameters), `json` (HTTP POST with JSON body), `kafka`, `amqp`. |
+| `forward.url` | string | — | URL to forward positions to. Supports position attribute placeholders, e.g. `{uniqueId}`, `{latitude}`, `{longitude}`, `{speed}`. |
+| `forward.header` | string | — | Additional HTTP header for authorization or routing. Example: `Authorization: Bearer mytoken`. |
+| `forward.exchange` | string | `traccar` | AMQP exchange name (when `forward.type` is `amqp`). |
+| `forward.topic` | string | `positions` | Kafka topic or AMQP routing key. |
+| `forward.retry.enable` | boolean | `false` | Enable automatic retries when delivery fails (non-2xx response or unreachable host). |
+| `forward.retry.delay` | integer | `100` | Initial retry delay in milliseconds. Doubles on each subsequent failure. |
+| `forward.retry.count` | integer | `10` | Maximum number of retry attempts before a position is dropped. |
+| `forward.retry.limit` | integer | `100` | Maximum number of positions queued for retry. Older positions are discarded when this limit is reached. |
+
+**Events forwarding** (in addition to positions):
+
+| Key | Type | Default | Description |
+|-----|------|---------|-------------|
+| `event.forward.url` | string | — | URL to forward events to. |
+| `event.forward.header` | string | — | Additional HTTP header for event forwarding. |
+| `event.forward.type` | string | `json` | Event forwarding format: `json` or `kafka`. |
+| `event.forward.topic` | string | `events` | Kafka topic or AMQP routing key for events. |
+
+```xml
+<!-- Forward positions as JSON to an external API -->
+<entry key='forward.type'>json</entry>
+<entry key='forward.url'>https://api.example.com/positions</entry>
+<entry key='forward.header'>Authorization: Bearer mytoken</entry>
+<entry key='forward.retry.enable'>true</entry>
+<entry key='forward.retry.count'>5</entry>
+
+<!-- Forward positions via URL parameters -->
+<entry key='forward.url'>https://api.example.com/update?id={uniqueId}&amp;lat={latitude}&amp;lon={longitude}&amp;speed={speed}</entry>
+```
+
+<Note>
+  When using URL parameter forwarding, use `&amp;` instead of `&` to separate parameters in the XML file.
+</Note>
+
+</Accordion>
+
+<Accordion title="Speed limits">
+
+Traccar can fetch real-time road speed limits for overspeed detection using third-party APIs.
+
+| Key | Type | Default | Description |
+|-----|------|---------|-------------|
+| `speedLimit.enable` | boolean | `false` | Enable speed limit API integration. |
+| `speedLimit.type` | string | — | Provider to use. Currently available: `overpass` (OpenStreetMap Overpass API). |
+| `speedLimit.url` | string | — | Speed limit provider API URL. |
+| `speedLimit.accuracy` | integer | `100` | Search radius in meters for finding the nearest road with a speed limit. |
+
+```xml
+<entry key='speedLimit.enable'>true</entry>
+<entry key='speedLimit.type'>overpass</entry>
+<entry key='speedLimit.url'>https://overpass-api.de/api/interpreter</entry>
+```
+
+</Accordion>
+
+<Accordion title="LBS / Cell tower geolocation">
+
+For devices that report cell tower or Wi-Fi data instead of GPS coordinates, Traccar can resolve their approximate location using third-party LBS (Location-Based Services) APIs.
+
+| Key | Type | Default | Description |
+|-----|------|---------|-------------|
+| `geolocation.enable` | boolean | `false` | Enable LBS geolocation resolution. |
+| `geolocation.type` | string | — | Provider: `google`, `unwired`, or `opencellid`. |
+| `geolocation.url` | string | — | Custom provider API URL (not required for most providers). |
+| `geolocation.key` | string | — | API key. Required for OpenCellID and some other providers. |
+| `geolocation.processInvalidPositions` | boolean | `false` | Apply geolocation to positions that already have a valid GPS fix. |
+| `geolocation.requireWifi` | boolean | `false` | Only perform geolocation when Wi-Fi scan data is available (improves accuracy). |
+| `geolocation.reuse` | boolean | `false` | Reuse the last geolocation result if the cell/Wi-Fi details have not changed. |
+
+```xml
+<entry key='geolocation.enable'>true</entry>
+<entry key='geolocation.type'>opencellid</entry>
+<entry key='geolocation.key'>your_opencellid_api_key</entry>
+```
+
+</Accordion>

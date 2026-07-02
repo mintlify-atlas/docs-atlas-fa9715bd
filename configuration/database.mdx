@@ -1,0 +1,190 @@
+---
+title: "Database Configuration in Traccar"
+sidebarTitle: "Database"
+description: "Configure Traccar's database connection, connection pool, position retention, and auto-registration of unknown devices using traccar.xml keys."
+---
+
+Traccar stores all devices, positions, events, geofences, and users in a relational database. The connection is configured in `traccar.xml` using a standard JDBC URL. By default, Traccar ships with an embedded H2 database that requires no external setup, but production deployments should use MySQL, MariaDB, or PostgreSQL.
+
+<Warning>
+  The default embedded H2 database stores data in `./data/database.mv.db`. It is not suitable for production use — it does not support concurrent access from multiple processes, has no replication, and offers limited tooling for backup and recovery. Migrate to MySQL/MariaDB or PostgreSQL for any serious deployment.
+</Warning>
+
+---
+
+## Connection keys
+
+<Accordion title="Core connection settings">
+
+These four keys are the minimum required to connect Traccar to a database.
+
+| Key | Type | Default | Description |
+|-----|------|---------|-------------|
+| `database.driver` | string | `org.h2.Driver` | JDBC driver Java class name. Traccar bundles drivers for H2, MySQL/MariaDB, and PostgreSQL — no extra JAR needed for those. For other databases, also set `database.driverFile`. |
+| `database.url` | string | `jdbc:h2:./data/database` | JDBC connection URL. See examples below for each supported database. |
+| `database.user` | string | `sa` | Database username. The default `sa` is the H2 administrator account. |
+| `database.password` | string | _(empty)_ | Database password. Leave empty for the default H2 setup. |
+| `database.driverFile` | string | — | Path to a third-party JDBC driver JAR file. Only needed when using a database other than H2, MySQL, MariaDB, or PostgreSQL. |
+
+</Accordion>
+
+<Accordion title="Connection pool">
+
+Traccar uses a JDBC connection pool (HikariCP) to manage database connections efficiently.
+
+| Key | Type | Default | Description |
+|-----|------|---------|-------------|
+| `database.maxPoolSize` | integer | `20` | Maximum number of connections in the pool. Increase for high-traffic servers with many concurrent device writes. |
+| `database.checkConnection` | string | `SELECT 1` | SQL query used to validate connections before handing them to the application. Use `SELECT 1 FROM DUAL` for Oracle. |
+| `database.maxLifetime` | integer | — | Maximum lifetime in milliseconds for a connection in the pool. Useful when the database server closes idle connections after a fixed period. |
+
+```xml
+<entry key='database.maxPoolSize'>50</entry>
+<entry key='database.checkConnection'>SELECT 1</entry>
+```
+
+</Accordion>
+
+<Accordion title="Position storage and retention">
+
+These keys control how raw position data is stored and how long it is retained.
+
+| Key | Type | Default | Description |
+|-----|------|---------|-------------|
+| `database.positionPeriod` | long | `7776000` (90 days) | Limits queries for the latest position to positions reported within this many seconds. This is especially useful with TimescaleDB to avoid scanning all time partitions. Set to `0` to disable the limit. |
+| `database.saveOriginal` | boolean | `false` | Store the original raw HEX or ASCII protocol data as a `raw` attribute on each position. Useful for debugging decoder issues. |
+| `database.saveEmpty` | boolean | `false` | Save positions that have no valid GPS fix (e.g. heartbeat messages). By default these are discarded. |
+| `database.positionBatchInterval` | long | `0` | If non-zero, enables batch inserts for positions. The value is the flush interval in milliseconds. Positions collected during this window are written as a single JDBC batch — trades a small amount of latency for significantly higher throughput on busy servers. |
+| `database.positionBatchSize` | integer | `100` | Maximum number of positions in a single batch insert. The default of 100 is safe across all supported databases including SQL Server (2100 parameter limit). PostgreSQL and MySQL can handle much larger values. |
+
+```xml
+<!-- Enable batching for a high-volume server -->
+<entry key='database.positionBatchInterval'>500</entry>
+<entry key='database.positionBatchSize'>500</entry>
+
+<!-- Store raw protocol data for debugging -->
+<entry key='database.saveOriginal'>true</entry>
+```
+
+</Accordion>
+
+<Accordion title="Unknown device handling">
+
+By default, Traccar ignores data from devices that have not been registered in the system. These keys change that behavior.
+
+| Key | Type | Default | Description |
+|-----|------|---------|-------------|
+| `database.registerUnknown` | boolean | `false` | Automatically create a new device record in the database when data is received from an unknown device identifier. |
+| `database.registerUnknown.defaultCategory` | string | — | Device category assigned to auto-registered devices (e.g. `car`, `truck`, `motorcycle`). |
+| `database.registerUnknown.defaultGroupId` | long | — | Group ID to assign to auto-registered devices. The group must already exist. |
+| `database.registerUnknown.regex` | string | `\w{3,15}` | Regular expression that a device identifier must match before it is auto-registered. The default pattern accepts alphanumeric IDs between 3 and 15 characters. |
+| `database.throttleUnknown` | boolean | `false` | Throttle database queries triggered by repeated connections from unknown devices. Prevents denial-of-service when a large number of unregistered devices are sending data. |
+
+```xml
+<!-- Auto-register any device with a valid IMEI-like identifier -->
+<entry key='database.registerUnknown'>true</entry>
+<entry key='database.registerUnknown.regex'>\d{15}</entry>
+<entry key='database.registerUnknown.defaultCategory'>car</entry>
+```
+
+</Accordion>
+
+<Accordion title="In-memory database (testing only)">
+
+| Key | Type | Default | Description |
+|-----|------|---------|-------------|
+| `database.memory` | boolean | `false` | Use an in-memory H2 database instead of a persistent SQL database. **All data is lost when the server stops.** Use only for integration testing. |
+
+<Warning>
+  Never enable `database.memory` in production. The entire database is discarded on every server restart.
+</Warning>
+
+</Accordion>
+
+---
+
+## JDBC URL examples
+
+<Tabs>
+  <Tab title="H2 (default)">
+```xml
+<entry key='database.driver'>org.h2.Driver</entry>
+<entry key='database.url'>jdbc:h2:./data/database</entry>
+<entry key='database.user'>sa</entry>
+<entry key='database.password'></entry>
+```
+  </Tab>
+  <Tab title="MySQL / MariaDB">
+```xml
+<entry key='database.driver'>com.mysql.cj.jdbc.Driver</entry>
+<entry key='database.url'>jdbc:mysql://localhost:3306/traccar?serverTimezone=UTC&amp;allowMultiQueries=true&amp;autoReconnect=true&amp;useSSL=false&amp;allowPublicKeyRetrieval=true</entry>
+<entry key='database.user'>traccar</entry>
+<entry key='database.password'>your_password</entry>
+```
+
+Create the database first:
+```sql
+CREATE DATABASE traccar CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
+CREATE USER 'traccar'@'localhost' IDENTIFIED BY 'your_password';
+GRANT ALL PRIVILEGES ON traccar.* TO 'traccar'@'localhost';
+FLUSH PRIVILEGES;
+```
+  </Tab>
+  <Tab title="PostgreSQL">
+```xml
+<entry key='database.driver'>org.postgresql.Driver</entry>
+<entry key='database.url'>jdbc:postgresql://localhost:5432/traccar</entry>
+<entry key='database.user'>traccar</entry>
+<entry key='database.password'>your_password</entry>
+```
+
+Create the database first:
+```sql
+CREATE USER traccar WITH PASSWORD 'your_password';
+CREATE DATABASE traccar OWNER traccar;
+```
+  </Tab>
+  <Tab title="Microsoft SQL Server">
+```xml
+<entry key='database.driver'>com.microsoft.sqlserver.jdbc.SQLServerDriver</entry>
+<entry key='database.url'>jdbc:sqlserver://localhost:1433;databaseName=traccar;encrypt=false</entry>
+<entry key='database.user'>traccar</entry>
+<entry key='database.password'>your_password</entry>
+<entry key='database.checkConnection'>SELECT 1</entry>
+```
+
+You must supply the Microsoft JDBC driver JAR separately:
+```xml
+<entry key='database.driverFile'>/opt/traccar/mssql-jdbc-12.x.x.jre11.jar</entry>
+```
+  </Tab>
+</Tabs>
+
+---
+
+## Complete production example
+
+```xml
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE properties SYSTEM 'http://java.sun.com/dtd/properties.dtd'>
+<properties>
+
+    <entry key='database.driver'>com.mysql.cj.jdbc.Driver</entry>
+    <entry key='database.url'>jdbc:mysql://localhost:3306/traccar?serverTimezone=UTC&amp;allowMultiQueries=true&amp;autoReconnect=true&amp;useSSL=false&amp;allowPublicKeyRetrieval=true</entry>
+    <entry key='database.user'>traccar</entry>
+    <entry key='database.password'>strong_password_here</entry>
+
+    <!-- Connection pool tuning -->
+    <entry key='database.maxPoolSize'>30</entry>
+
+    <!-- Position storage -->
+    <entry key='database.positionBatchInterval'>500</entry>
+    <entry key='database.positionBatchSize'>200</entry>
+
+    <!-- Auto-register new devices -->
+    <entry key='database.registerUnknown'>true</entry>
+    <entry key='database.registerUnknown.defaultCategory'>car</entry>
+    <entry key='database.throttleUnknown'>true</entry>
+
+</properties>
+```

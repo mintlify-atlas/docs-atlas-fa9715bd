@@ -1,0 +1,396 @@
+---
+title: "Commands API — Send Instructions to GPS Devices"
+sidebarTitle: "Commands"
+description: "POST /api/commands/send delivers remote commands to GPS devices in real time. Supports engine control, output management, interval changes, and custom SMS commands."
+---
+
+The Commands API lets you send control instructions to GPS devices that support two-way communication. Commands can be dispatched immediately when a device is actively connected, or stored and queued for delivery the next time the device connects. Traccar also supports a library of saved commands that can be reused across devices. If a device's protocol does not support a particular command type, the server will reject the request with a `400 Bad Request` response.
+
+## Command Object
+
+<ResponseField name="id" type="integer">
+  Unique saved-command identifier. Read-only; assigned by the server when the command is stored.
+</ResponseField>
+
+<ResponseField name="deviceId" type="integer">
+  Target device identifier. Required when sending immediately. Optional when storing a reusable saved command.
+</ResponseField>
+
+<ResponseField name="description" type="string">
+  User-friendly label displayed in the UI when selecting from saved commands.
+</ResponseField>
+
+<ResponseField name="type" type="string" required>
+  Command type string. Must match a type supported by the device's protocol. See [Command Types](#command-types) below.
+</ResponseField>
+
+<ResponseField name="textChannel" type="boolean">
+  When `true`, the command is delivered via SMS rather than the data connection. Requires the device phone number to be configured. Default: `false`.
+</ResponseField>
+
+<ResponseField name="attributes" type="object">
+  Additional parameters required by the command type. See [Command Attributes](#command-attributes) for type-specific keys.
+</ResponseField>
+
+---
+
+## Command Types
+
+The following type strings are defined in `Command.java`. Not all devices support every type — use `GET /api/commands/types?deviceId={id}` to retrieve the supported subset for a specific device.
+
+### Positioning
+
+| Type | Description |
+|------|-------------|
+| `positionSingle` | Request a single position update immediately |
+| `positionPeriodic` | Set the periodic reporting interval. Requires `frequency` attribute (seconds). |
+| `positionStop` | Stop periodic position reporting |
+| `identification` | Request device identification |
+
+### Engine and Output Control
+
+| Type | Description |
+|------|-------------|
+| `engineStop` | Immobilise the vehicle (cut engine/fuel output) |
+| `engineResume` | Re-enable the engine after an `engineStop` |
+| `outputControl` | Control a digital output port. Requires `index` and `data` attributes. |
+| `powerOff` | Power off the device |
+| `rebootDevice` | Reboot the device |
+| `factoryReset` | Restore factory defaults |
+
+### Alarm Management
+
+| Type | Description |
+|------|-------------|
+| `alarmArm` | Arm the device alarm system |
+| `alarmDisarm` | Disarm the device alarm system |
+| `alarmDismiss` | Dismiss the current active alarm |
+| `alarmGeofence` | Configure geofence alarm |
+| `alarmBattery` | Configure low battery alarm |
+| `alarmSos` | Configure SOS alarm |
+| `alarmRemove` | Configure tamper/removal alarm |
+| `alarmClock` | Configure clock-based alarm |
+| `alarmSpeed` | Configure speed alarm |
+| `alarmFall` | Configure fall detection alarm |
+| `alarmVibration` | Configure vibration alarm |
+
+### Communication and Configuration
+
+| Type | Description |
+|------|-------------|
+| `setTimezone` | Set the device timezone. Requires `timezone` attribute (e.g. `America/New_York`). |
+| `setConnection` | Update the server address/port the device reports to. Requires `server` and `port` attributes. |
+| `setOdometer` | Set the internal odometer value |
+| `setSpeedLimit` | Configure the device-side speed limit |
+| `setAgps` | Configure AGPS settings |
+| `setIndicator` | Configure device LED/indicator |
+| `setPhonebook` | Upload phonebook to device |
+| `sosNumber` | Configure SOS contact number. Requires `phone` attribute. |
+| `silenceTime` | Set a silence/do-not-disturb window |
+| `configuration` | Send a raw configuration string |
+| `getVersion` | Request firmware and hardware version |
+| `firmwareUpdate` | Trigger a firmware update |
+| `getModemStatus` | Request modem status |
+| `getDeviceStatus` | Request general device status |
+| `modePowerSaving` | Switch to power-saving mode |
+| `modeDeepSleep` | Switch to deep sleep mode |
+
+### Messaging and Media
+
+| Type | Description |
+|------|-------------|
+| `message` | Send a text message to the device display. Requires `message` attribute. |
+| `voiceMessage` | Send a voice message |
+| `voiceMonitoring` | Enable/disable voice monitoring |
+| `requestPhoto` | Request the device to capture and send a photo |
+| `videoStart` | Start video recording |
+| `videoStop` | Stop video recording |
+| `sendSms` | Send an SMS via the device |
+| `sendUssd` | Send a USSD code |
+| `custom` | Send a raw custom command string via SMS. Requires `data` attribute. |
+
+---
+
+## Command Attributes
+
+Some command types require specific keys in the `attributes` map.
+
+| Command type | Attribute key | Type | Description |
+|---|---|---|---|
+| `positionPeriodic` | `frequency` | integer | Reporting interval in seconds |
+| `outputControl` | `index` | integer | Output port index (starting at 1) |
+| `outputControl` | `data` | string | Port value (`"1"` for on, `"0"` for off) |
+| `setTimezone` | `timezone` | string | Timezone identifier, e.g. `"America/New_York"` |
+| `setConnection` | `server` | string | Server hostname or IP address |
+| `setConnection` | `port` | integer | Server port number |
+| `message` | `message` | string | Text to display on the device |
+| `sosNumber` | `phone` | string | SOS phone number |
+| `custom` | `data` | string | Raw command text to send |
+| `setSpeedLimit` | `data` | string | Speed limit value |
+
+---
+
+## Endpoints
+
+### GET /api/commands
+
+List saved commands the current user has access to. These are reusable templates that can be dispatched to devices without retyping parameters each time.
+
+<ParamField query="all" type="boolean">
+  Return all saved commands. Requires administrator or manager role.
+</ParamField>
+
+<ParamField query="userId" type="integer">
+  Return commands belonging to a specific user.
+</ParamField>
+
+<ParamField query="deviceId" type="integer">
+  Return commands linked to a specific device.
+</ParamField>
+
+<ParamField query="groupId" type="integer">
+  Return commands linked to a specific group.
+</ParamField>
+
+<ParamField query="refresh" type="boolean">
+  Force a cache refresh.
+</ParamField>
+
+<ParamField query="limit" type="integer">
+  Maximum number of records to return.
+</ParamField>
+
+<ParamField query="offset" type="integer">
+  Records to skip for pagination.
+</ParamField>
+
+```bash
+curl -u admin:password http://localhost:8082/api/commands
+```
+
+---
+
+### POST /api/commands
+
+Create a new saved command template.
+
+<ParamField body="type" type="string" required>
+  Command type string.
+</ParamField>
+
+<ParamField body="description" type="string">
+  Label shown in the UI.
+</ParamField>
+
+<ParamField body="deviceId" type="integer">
+  Optionally bind the command to a specific device.
+</ParamField>
+
+<ParamField body="textChannel" type="boolean">
+  When `true`, use SMS delivery.
+</ParamField>
+
+<ParamField body="attributes" type="object">
+  Type-specific parameters.
+</ParamField>
+
+```bash
+# Save a reusable 60-second interval command
+curl -X POST -u admin:password \
+  -H 'Content-Type: application/json' \
+  -d '{
+    "description": "Report every 60 seconds",
+    "type": "positionPeriodic",
+    "attributes": {"frequency": 60}
+  }' \
+  http://localhost:8082/api/commands
+```
+
+---
+
+### GET /api/commands/{id}
+
+Fetch a single saved command by its ID.
+
+<ParamField path="id" type="integer" required>
+  Saved command identifier.
+</ParamField>
+
+```bash
+curl -u admin:password http://localhost:8082/api/commands/3
+```
+
+---
+
+### PUT /api/commands/{id}
+
+Update an existing saved command.
+
+<ParamField path="id" type="integer" required>
+  Saved command identifier.
+</ParamField>
+
+```bash
+curl -X PUT -u admin:password \
+  -H 'Content-Type: application/json' \
+  -d '{
+    "id": 3,
+    "description": "Report every 30 seconds",
+    "type": "positionPeriodic",
+    "attributes": {"frequency": 30}
+  }' \
+  http://localhost:8082/api/commands/3
+```
+
+---
+
+### DELETE /api/commands/{id}
+
+Delete a saved command.
+
+<ParamField path="id" type="integer" required>
+  Saved command identifier.
+</ParamField>
+
+```bash
+curl -X DELETE -u admin:password http://localhost:8082/api/commands/3
+```
+
+Returns `204 No Content` on success.
+
+---
+
+### GET /api/commands/send
+
+List saved commands that are currently supported by a specific device, filtered by the device's active protocol. The device must have previously reported at least one position for its protocol to be known.
+
+<ParamField query="deviceId" type="integer" required>
+  Internal device identifier.
+</ParamField>
+
+```bash
+curl -u admin:password \
+  'http://localhost:8082/api/commands/send?deviceId=1'
+```
+
+---
+
+### POST /api/commands/send
+
+Dispatch a command to a device immediately. If the device is connected, the command is sent right away and returns `200 OK`. If the device is offline, the command is queued and returns `202 Accepted`.
+
+To send a saved command by reference, set `id` to the saved command's identifier. To send a one-off command without saving it, provide the full command body.
+
+<ParamField body="deviceId" type="integer" required>
+  Target device identifier.
+</ParamField>
+
+<ParamField body="type" type="string" required>
+  Command type string.
+</ParamField>
+
+<ParamField body="textChannel" type="boolean">
+  When `true`, deliver via SMS.
+</ParamField>
+
+<ParamField body="attributes" type="object">
+  Type-specific parameters.
+</ParamField>
+
+<ParamField query="groupId" type="integer">
+  Send the command to all devices in the specified group simultaneously.
+</ParamField>
+
+<Tabs>
+  <Tab title="Engine stop">
+    ```bash
+    curl -X POST -u admin:password \
+      -H 'Content-Type: application/json' \
+      -d '{"deviceId":1,"type":"engineStop","attributes":{}}' \
+      http://localhost:8082/api/commands/send
+    ```
+  </Tab>
+  <Tab title="Set reporting interval">
+    ```bash
+    curl -X POST -u admin:password \
+      -H 'Content-Type: application/json' \
+      -d '{"deviceId":1,"type":"positionPeriodic","attributes":{"frequency":60}}' \
+      http://localhost:8082/api/commands/send
+    ```
+  </Tab>
+  <Tab title="Control output port">
+    ```bash
+    # Turn on output port 1
+    curl -X POST -u admin:password \
+      -H 'Content-Type: application/json' \
+      -d '{"deviceId":1,"type":"outputControl","attributes":{"index":1,"data":"1"}}' \
+      http://localhost:8082/api/commands/send
+    ```
+  </Tab>
+  <Tab title="Send message">
+    ```bash
+    curl -X POST -u admin:password \
+      -H 'Content-Type: application/json' \
+      -d '{"deviceId":1,"type":"message","attributes":{"message":"Return to base"}}' \
+      http://localhost:8082/api/commands/send
+    ```
+  </Tab>
+  <Tab title="Group command">
+    ```bash
+    # Set 30-second intervals for all devices in group 2
+    curl -X POST -u admin:password \
+      -H 'Content-Type: application/json' \
+      -d '{"type":"positionPeriodic","attributes":{"frequency":30}}' \
+      'http://localhost:8082/api/commands/send?groupId=2'
+    ```
+  </Tab>
+</Tabs>
+
+---
+
+### GET /api/commands/types
+
+Retrieve all command types the server knows about, or filter to those supported by a specific device's protocol.
+
+<ParamField query="deviceId" type="integer">
+  When provided, returns only command types supported by that device's protocol. The device must have already reported at least one position.
+</ParamField>
+
+<ParamField query="textChannel" type="boolean">
+  When `true`, returns SMS-deliverable command types only. When `false` or omitted, returns data-channel commands.
+</ParamField>
+
+```bash
+# All possible command types
+curl -u admin:password http://localhost:8082/api/commands/types
+
+# Supported commands for device 1
+curl -u admin:password \
+  'http://localhost:8082/api/commands/types?deviceId=1'
+
+# SMS commands supported by device 1
+curl -u admin:password \
+  'http://localhost:8082/api/commands/types?deviceId=1&textChannel=true'
+```
+
+```json
+[
+  {"type": "positionPeriodic"},
+  {"type": "positionStop"},
+  {"type": "engineStop"},
+  {"type": "engineResume"},
+  {"type": "outputControl"}
+]
+```
+
+---
+
+## Queued vs Immediate Delivery
+
+<Note>
+  When a command is sent to an offline device, the server returns `202 Accepted` and stores the command in the queue. It will be delivered the next time the device establishes a connection. The queued command record includes an `id` and `deviceId`. You can add `"noQueue": true` to `attributes` to reject delivery if the device is not currently connected rather than queuing.
+</Note>
+
+<Warning>
+  `engineStop` and similar actuator commands can have irreversible physical consequences if sent to the wrong device. Always verify `deviceId` before dispatching.
+</Warning>

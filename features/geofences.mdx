@@ -1,0 +1,188 @@
+---
+title: "Create and Manage Geofences in Traccar"
+sidebarTitle: "Geofences"
+description: "Define geographic boundaries as circles, polygons, or polylines. Traccar triggers geofenceEnter and geofenceExit events when devices cross boundaries."
+---
+
+Geofences in Traccar are named geographic boundaries that trigger events when a device enters or exits them. They can be linked to specific devices, groups, or all devices under a user. Geofences are evaluated server-side on every incoming position, so no firmware changes are required on the device.
+
+## Geofence Fields
+
+The `Geofence` model (`Geofence.java`) includes the following fields:
+
+| Field | Type | Description |
+|---|---|---|
+| `id` | long | Auto-assigned identifier |
+| `name` | string | Display name for the geofence |
+| `description` | string | Optional free-text description |
+| `area` | string | Boundary definition in WKT-like format (see below) |
+| `calendarId` | long | Optional calendar ID for time-restricted activation |
+| `attributes` | object | Extra attributes (e.g., `polylineDistance`, `speedLimit`, `floor`, `ceiling`) |
+
+## Geofence Types
+
+Traccar supports three geometry types, each expressed as a string in the `area` field. The format mirrors WKT (Well-Known Text) conventions.
+
+<Tabs>
+  <Tab title="Circle">
+    A circular zone defined by a center point and radius in meters.
+
+    ```
+    CIRCLE (latitude longitude radius)
+    ```
+
+    **Example** — 500-metre radius around a point:
+    ```
+    CIRCLE (37.7749 -122.4194 500)
+    ```
+
+    Circles are the most efficient type for server-side evaluation and are ideal for representing depots, warehouses, or customer sites.
+  </Tab>
+  <Tab title="Polygon">
+    A closed polygon defined by three or more coordinate pairs. The first and last point must be identical to close the ring.
+
+    ```
+    POLYGON ((lon1 lat1, lon2 lat2, ..., lon1 lat1))
+    ```
+
+    **Example** — rectangular zone:
+    ```
+    POLYGON ((-122.42 37.78, -122.41 37.78, -122.41 37.77, -122.42 37.77, -122.42 37.78))
+    ```
+
+    Use polygons for irregular-shaped zones such as industrial sites, city limits, or custom delivery areas.
+  </Tab>
+  <Tab title="Polyline (Corridor)">
+    A corridor along a route — a `LINESTRING` with a configurable buffer width. The effective detection distance is controlled by the `polylineDistance` attribute (default: 25 metres).
+
+    ```
+    LINESTRING (lon1 lat1, lon2 lat2, ...)
+    ```
+
+    **Example** — corridor along a road:
+    ```
+    LINESTRING (-122.42 37.78, -122.41 37.76, -122.40 37.74)
+    ```
+
+    Polyline geofences are useful for monitoring route compliance. Set the `polylineDistance` attribute (in metres) to widen or narrow the corridor.
+  </Tab>
+</Tabs>
+
+### Altitude Filtering
+
+Geofences can optionally be constrained to a vertical range using the `floor` and `ceiling` attributes (metres above sea level). A position is only considered inside the geofence if its altitude is between the two values. This is useful for multi-storey buildings or airspace corridors.
+
+## Linking Geofences to Devices
+
+Geofences are linked to devices and groups through Traccar's permissions system. A single geofence can be linked to many devices, and a device can be inside many geofences simultaneously.
+
+<Steps>
+  <Step title="Create the geofence">
+    Use `POST /api/geofences` with the desired `name` and `area` fields.
+  </Step>
+  <Step title="Link to a device or group">
+    Use `POST /api/permissions` with a body containing either `deviceId` + `geofenceId`, or `groupId` + `geofenceId`.
+  </Step>
+  <Step title="Verify">
+    The next position update for the linked device will include the geofence ID in `geofenceIds` if the device is currently inside.
+  </Step>
+</Steps>
+
+<Tip>
+Link a geofence to a group to automatically apply it to every device in that group, including devices added to the group in the future.
+</Tip>
+
+## Geofence Events
+
+Every time a device transitions across a geofence boundary, the `GeofenceEventHandler` generates one of two events:
+
+| Event Type | Trigger |
+|---|---|
+| `geofenceEnter` | Device moves from outside to inside the geofence |
+| `geofenceExit` | Device moves from inside to outside the geofence |
+
+Each event record includes the `geofenceId` field pointing to the specific geofence that was crossed. These events appear in the events timeline, can trigger notifications, and are included in the events report.
+
+<Note>
+Geofence crossing is determined by comparing the set of active geofences between consecutive positions. If a device reports positions infrequently, it may jump across a boundary without a transitional point — Traccar will still generate the enter/exit event based on the state change.
+</Note>
+
+## Calendar-Based Geofences
+
+Attaching a calendar to a geofence makes it active only during the time windows defined in that calendar. Outside of those windows, entry and exit events are suppressed even if the device crosses the boundary.
+
+This is useful for:
+- **Curfew monitoring** — alert only during night hours
+- **Working hours** — restrict zone alerts to business hours
+- **Seasonal zones** — activate summer or winter routes
+
+Create a calendar via `POST /api/calendars` with an iCal-formatted `data` field, then set the geofence's `calendarId` to the calendar's ID.
+
+## Speed Limits on Geofences
+
+Geofences can carry a `speedLimit` attribute (in knots). The `OverspeedEventHandler` checks this value when evaluating overspeed for devices currently inside the geofence. When `event.overspeed.preferLowest` is enabled, the lowest speed limit across all active geofences is applied.
+
+## Proximity Alerts
+
+Beyond standard geofences, Traccar supports device-to-device proximity monitoring. When linked devices are configured, the `ProximityEventHandler` generates:
+
+| Event Type | Trigger |
+|---|---|
+| `proximityEnter` | Device comes within the configured enter distance of a linked device |
+| `proximityExit` | Device moves beyond the configured exit distance of a linked device |
+| `unaccompaniedMotion` | Device starts moving while no linked devices are within the unaccompanied distance |
+
+Configure the thresholds via device or group attributes:
+- `event.proximity.enterDistance` — enter threshold in metres
+- `event.proximity.exitDistance` — exit threshold in metres
+- `event.unaccompanied.distance` — unaccompanied motion threshold in metres
+
+## API Examples
+
+<Tabs>
+  <Tab title="Create Circle">
+    ```bash
+    # Create a circular geofence (500m radius)
+    curl -X POST -u admin:password \
+      -H 'Content-Type: application/json' \
+      -d '{"name":"Office","area":"CIRCLE (37.7749 -122.4194 500)"}' \
+      http://localhost:8082/api/geofences
+    ```
+  </Tab>
+  <Tab title="Create Polygon">
+    ```bash
+    # Create a polygon geofence
+    curl -X POST -u admin:password \
+      -H 'Content-Type: application/json' \
+      -d '{"name":"Zone A","area":"POLYGON ((-122.42 37.78, -122.41 37.78, -122.41 37.77, -122.42 37.77, -122.42 37.78))"}' \
+      http://localhost:8082/api/geofences
+    ```
+  </Tab>
+  <Tab title="Create Corridor">
+    ```bash
+    # Create a polyline (corridor) geofence with 50m width
+    curl -X POST -u admin:password \
+      -H 'Content-Type: application/json' \
+      -d '{"name":"Route 1","area":"LINESTRING (-122.42 37.78, -122.41 37.76, -122.40 37.74)","attributes":{"polylineDistance":50}}' \
+      http://localhost:8082/api/geofences
+    ```
+  </Tab>
+  <Tab title="Link to Device">
+    ```bash
+    # Link geofence ID 1 to device ID 1
+    curl -X POST -u admin:password \
+      -H 'Content-Type: application/json' \
+      -d '{"deviceId":1,"geofenceId":1}' \
+      http://localhost:8082/api/permissions
+    ```
+  </Tab>
+  <Tab title="Link to Group">
+    ```bash
+    # Link geofence ID 1 to group ID 2
+    curl -X POST -u admin:password \
+      -H 'Content-Type: application/json' \
+      -d '{"groupId":2,"geofenceId":1}' \
+      http://localhost:8082/api/permissions
+    ```
+  </Tab>
+</Tabs>

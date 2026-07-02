@@ -1,0 +1,377 @@
+---
+title: "Notifications API — Configure Alert Subscriptions"
+sidebarTitle: "Notifications"
+description: "Manage notification subscriptions in Traccar. GET /api/notifications lists configured alerts. POST subscribes a user to specific event types and notificators."
+---
+
+The Notifications API manages alert subscriptions that link users to event types and delivery channels (called notificators). When a matching event occurs — such as a device entering a geofence, triggering an overspeed alarm, or going offline — Traccar delivers the alert through every notificator listed on the matching notification record. Notifications can be scoped to specific devices or groups through the Permissions API, and can be restricted to a time window using a calendar.
+
+## Notification Object
+
+<ResponseField name="id" type="integer">
+  Unique notification identifier. Read-only; assigned by the server.
+</ResponseField>
+
+<ResponseField name="type" type="string" required>
+  Event type that triggers this notification. See [Event Types](#event-types) for all supported values.
+</ResponseField>
+
+<ResponseField name="description" type="string">
+  User-defined label displayed in the UI to identify this notification subscription.
+</ResponseField>
+
+<ResponseField name="always" type="boolean">
+  When `true`, the notification fires for all devices accessible to the user regardless of any device/group permission links. When `false` (default), it only fires for devices explicitly linked via the Permissions API.
+</ResponseField>
+
+<ResponseField name="notificators" type="string" required>
+  Comma-separated list of delivery channels. Example: `"web,mail"`. See [Available Notificators](#available-notificators) for supported values.
+</ResponseField>
+
+<ResponseField name="commandId" type="integer">
+  When set, automatically dispatches the referenced saved command to the device when the event fires.
+</ResponseField>
+
+<ResponseField name="calendarId" type="integer">
+  Calendar identifier that restricts when this notification is active. When `0` or omitted the notification is always active.
+</ResponseField>
+
+<ResponseField name="attributes" type="object">
+  Additional custom attributes used by specific notificators or notification templates.
+</ResponseField>
+
+---
+
+## Event Types
+
+The following event type strings are accepted in the `type` field. Use `GET /api/notifications/types` to retrieve the authoritative list from your server.
+
+| Type string | Description |
+|-------------|-------------|
+| `deviceOnline` | Device came online |
+| `deviceOffline` | Device went offline |
+| `deviceUnknown` | Device status changed to unknown |
+| `deviceInactive` | Device has been inactive for a configured period |
+| `deviceMoving` | Device started moving |
+| `deviceStopped` | Device stopped |
+| `deviceOverspeed` | Device exceeded the configured speed limit |
+| `deviceFuelDrop` | Significant fuel drop detected |
+| `deviceFuelIncrease` | Significant fuel increase detected |
+| `geofenceEnter` | Device entered a linked geofence |
+| `geofenceExit` | Device exited a linked geofence |
+| `proximityEnter` | Device entered proximity range of another device |
+| `proximityExit` | Device left proximity range of another device |
+| `alarm` | Any alarm from the device |
+| `ignitionOn` | Ignition turned on |
+| `ignitionOff` | Ignition turned off |
+| `maintenance` | Maintenance threshold reached |
+| `driverChanged` | Driver identifier changed |
+| `commandResult` | Response received from a sent command |
+| `queuedCommandSent` | A queued command was delivered to the device |
+| `unaccompaniedMotion` | Motion detected without ignition |
+| `media` | Media attachment (photo/video) received |
+
+---
+
+## Available Notificators
+
+Use `GET /api/notifications/notificators` to retrieve the notificators enabled on your server. Common options:
+
+| Notificator | Description |
+|-------------|-------------|
+| `web` | Browser push notification via the Traccar web app |
+| `mail` | Email to the user's registered address |
+| `sms` | SMS to the user's phone number |
+| `firebase` | Firebase Cloud Messaging (Android/iOS push) |
+| `telegram` | Telegram bot message |
+| `pushover` | Pushover push notification service |
+| `traccar` | Traccar Manager mobile app notification |
+| `command` | Dispatch a saved command when the event fires |
+| `whatsapp` | WhatsApp message |
+
+<Note>
+  The `command` and `web` notificators are excluded from announcement delivery. Pass `?announcement=true` to `GET /api/notifications/notificators` to get the filtered list suitable for server-wide announcements.
+</Note>
+
+---
+
+## Endpoints
+
+### GET /api/notifications
+
+List notifications the current user has access to.
+
+<ParamField query="all" type="boolean">
+  Return all notifications on the server. Requires administrator or manager role.
+</ParamField>
+
+<ParamField query="userId" type="integer">
+  Return notifications belonging to a specific user. Standard users may only pass their own `userId`.
+</ParamField>
+
+<ParamField query="deviceId" type="integer">
+  Return only notifications linked to a specific device.
+</ParamField>
+
+<ParamField query="groupId" type="integer">
+  Return only notifications linked to a specific group.
+</ParamField>
+
+<ParamField query="refresh" type="boolean">
+  Force a server-side cache refresh.
+</ParamField>
+
+<ParamField query="limit" type="integer">
+  Maximum number of records to return.
+</ParamField>
+
+<ParamField query="offset" type="integer">
+  Records to skip for pagination.
+</ParamField>
+
+<ParamField query="keyword" type="string">
+  Search keyword filter.
+</ParamField>
+
+```bash
+curl -u admin:password http://localhost:8082/api/notifications
+```
+
+---
+
+### POST /api/notifications
+
+Create a new notification subscription.
+
+<ParamField body="type" type="string" required>
+  Event type string that triggers the alert.
+</ParamField>
+
+<ParamField body="notificators" type="string" required>
+  Comma-separated delivery channels (e.g. `"web,mail"`).
+</ParamField>
+
+<ParamField body="always" type="boolean">
+  When `true`, applies to all accessible devices without needing explicit permission links.
+</ParamField>
+
+<ParamField body="description" type="string">
+  Optional label for the notification.
+</ParamField>
+
+<ParamField body="calendarId" type="integer">
+  Optional calendar ID to restrict active hours.
+</ParamField>
+
+<ParamField body="commandId" type="integer">
+  Optional saved command to dispatch automatically when the event fires.
+</ParamField>
+
+```bash
+# Overspeed alert via email and Telegram
+curl -X POST -u admin:password \
+  -H 'Content-Type: application/json' \
+  -d '{
+    "type": "deviceOverspeed",
+    "notificators": "mail,telegram",
+    "description": "Speed limit exceeded"
+  }' \
+  http://localhost:8082/api/notifications
+
+# Geofence entry/exit via web push, always active for all devices
+curl -X POST -u admin:password \
+  -H 'Content-Type: application/json' \
+  -d '{
+    "type": "geofenceEnter",
+    "notificators": "web",
+    "always": true
+  }' \
+  http://localhost:8082/api/notifications
+```
+
+**Example response:**
+
+```json
+{
+  "id": 5,
+  "type": "deviceOverspeed",
+  "description": "Speed limit exceeded",
+  "always": false,
+  "notificators": "mail,telegram",
+  "commandId": 0,
+  "calendarId": 0,
+  "attributes": {}
+}
+```
+
+---
+
+### GET /api/notifications/{id}
+
+Fetch a single notification by its ID.
+
+<ParamField path="id" type="integer" required>
+  Internal notification identifier.
+</ParamField>
+
+```bash
+curl -u admin:password http://localhost:8082/api/notifications/5
+```
+
+---
+
+### PUT /api/notifications/{id}
+
+Update an existing notification. Send the full notification object.
+
+<ParamField path="id" type="integer" required>
+  Internal notification identifier.
+</ParamField>
+
+```bash
+curl -X PUT -u admin:password \
+  -H 'Content-Type: application/json' \
+  -d '{
+    "id": 5,
+    "type": "deviceOverspeed",
+    "notificators": "mail,telegram,web",
+    "always": false,
+    "attributes": {}
+  }' \
+  http://localhost:8082/api/notifications/5
+```
+
+---
+
+### DELETE /api/notifications/{id}
+
+Delete a notification subscription.
+
+<ParamField path="id" type="integer" required>
+  Internal notification identifier.
+</ParamField>
+
+```bash
+curl -X DELETE -u admin:password http://localhost:8082/api/notifications/5
+```
+
+Returns `204 No Content` on success.
+
+---
+
+### GET /api/notifications/types
+
+Retrieve all event types supported by the server. Returns an array of type objects.
+
+```bash
+curl -u admin:password http://localhost:8082/api/notifications/types
+```
+
+```json
+[
+  {"type": "deviceOnline"},
+  {"type": "deviceOffline"},
+  {"type": "geofenceEnter"},
+  {"type": "geofenceExit"},
+  {"type": "alarm"},
+  {"type": "deviceOverspeed"}
+]
+```
+
+---
+
+### GET /api/notifications/notificators
+
+Retrieve all delivery channels available on the server.
+
+<ParamField query="announcement" type="boolean">
+  When `true`, returns only notificators suitable for server-wide announcements (excludes `web` and `command`).
+</ParamField>
+
+```bash
+curl -u admin:password http://localhost:8082/api/notifications/notificators
+```
+
+---
+
+### POST /api/notifications/test
+
+Send a test notification to the current user through all configured delivery channels.
+
+```bash
+curl -X POST -u admin:password http://localhost:8082/api/notifications/test
+```
+
+Returns `204 No Content` on success, or `400 Bad Request` if delivery failed.
+
+---
+
+### POST /api/notifications/test/{notificator}
+
+Send a test notification through a specific notificator only.
+
+<ParamField path="notificator" type="string" required>
+  Notificator name (e.g., `mail`, `telegram`, `web`).
+</ParamField>
+
+```bash
+curl -X POST -u admin:password \
+  http://localhost:8082/api/notifications/test/mail
+```
+
+---
+
+### POST /api/notifications/send/{notificator}
+
+Send a custom announcement message through a specific notificator to selected users. Requires manager or administrator privileges.
+
+<ParamField path="notificator" type="string" required>
+  Delivery channel name.
+</ParamField>
+
+<ParamField query="userId" type="array of integers">
+  Optional list of target user IDs. If omitted, the message is sent to all permitted users.
+</ParamField>
+
+<ParamField body="body" type="string" required>
+  Full notification text.
+</ParamField>
+
+<ParamField body="subject" type="string">
+  Subject line or title.
+</ParamField>
+
+<ParamField body="digest" type="string">
+  Short summary for compact display contexts. Defaults to `body` when omitted.
+</ParamField>
+
+<ParamField body="priority" type="boolean">
+  Mark the message as high priority.
+</ParamField>
+
+```bash
+curl -X POST -u admin:password \
+  -H 'Content-Type: application/json' \
+  -d '{"subject":"Maintenance window","body":"The server will restart at 02:00 UTC for maintenance."}' \
+  'http://localhost:8082/api/notifications/send/mail?userId=2&userId=3'
+```
+
+---
+
+## Linking Notifications to Devices
+
+A notification with `always: false` only fires for devices that are explicitly linked to it via the Permissions API. To apply a notification to a specific device or group:
+
+```bash
+# Link notification 5 to device 1
+curl -X POST -u admin:password \
+  -H 'Content-Type: application/json' \
+  -d '{"deviceId":1,"notificationId":5}' \
+  http://localhost:8082/api/permissions
+
+# Link notification 5 to all devices in group 2
+curl -X POST -u admin:password \
+  -H 'Content-Type: application/json' \
+  -d '{"groupId":2,"notificationId":5}' \
+  http://localhost:8082/api/permissions
+```

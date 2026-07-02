@@ -1,0 +1,307 @@
+---
+title: "Geofences API — Create and Manage Geographic Boundaries"
+sidebarTitle: "Geofences"
+description: "CRUD endpoints for geofences. Define circles, polygons, and polylines as WKT strings. Link geofences to devices via the permissions API."
+---
+
+The Geofences API manages geographic boundaries used for entry and exit event detection. When a device position falls inside or crosses a geofence boundary, Traccar generates `geofenceEnter` and `geofenceExit` events that can trigger notifications. Boundaries are defined using WKT (Well-Known Text) strings stored in the `area` field, and Traccar supports three geometry types: circles, polygons, and line strings (polylines with a configurable corridor width).
+
+## Geofence Object
+
+<ResponseField name="id" type="integer">
+  Unique geofence identifier assigned by the server. Read-only.
+</ResponseField>
+
+<ResponseField name="name" type="string" required>
+  Human-readable name shown in lists, maps, and event messages.
+</ResponseField>
+
+<ResponseField name="description" type="string">
+  Additional detail about the geofence displayed in the UI.
+</ResponseField>
+
+<ResponseField name="area" type="string" required>
+  Geofence boundary encoded as a WKT string. See [Area Formats](#area-formats) below.
+</ResponseField>
+
+<ResponseField name="calendarId" type="integer">
+  Calendar identifier that limits when the geofence is active. When `0` or omitted the geofence is always active.
+</ResponseField>
+
+<ResponseField name="attributes" type="object">
+  Custom key-value attributes. The special attribute `polylineDistance` (numeric, meters) sets the corridor width for `LINESTRING` geofences (default: 25 m).
+</ResponseField>
+
+---
+
+## Area Formats
+
+Traccar parses the `area` string to determine the geometry type. The value must begin with one of the recognised keywords.
+
+### Circle
+
+```
+CIRCLE (latitude longitude radius_meters)
+```
+
+The center is specified in **latitude longitude** order. The radius is in meters.
+
+```
+CIRCLE (37.7749 -122.4194 500)
+```
+
+This example creates a 500-meter radius circle centered on downtown San Francisco.
+
+### Polygon
+
+```
+POLYGON ((lon1 lat1, lon2 lat2, lon3 lat3, lon1 lat1))
+```
+
+<Warning>
+  WKT standard uses **longitude latitude** order (X Y) for polygons and line strings. This is the opposite of the latitude/longitude order used in the Circle format and in the Position object's `latitude`/`longitude` fields.
+</Warning>
+
+The polygon must be closed — the last coordinate pair must repeat the first. Coordinates are decimal degrees.
+
+```
+POLYGON ((-122.4194 37.7749, -122.4094 37.7749, -122.4094 37.7849, -122.4194 37.7849, -122.4194 37.7749))
+```
+
+### LineString (Polyline Corridor)
+
+```
+LINESTRING (lon1 lat1, lon2 lat2, ...)
+```
+
+Traccar treats a line string as a corridor. A device is considered inside the geofence if its position falls within `polylineDistance` meters of the line (default 25 m). Set `attributes.polylineDistance` to override.
+
+```
+LINESTRING (-122.4194 37.7749, -122.4094 37.7799, -122.3994 37.7849)
+```
+
+---
+
+## Endpoints
+
+### GET /api/geofences
+
+List geofences accessible to the current user.
+
+<ParamField query="all" type="boolean">
+  Return all geofences on the server. Requires administrator or manager role.
+</ParamField>
+
+<ParamField query="userId" type="integer">
+  Return geofences belonging to a specific user. Standard users may only pass their own `userId`.
+</ParamField>
+
+<ParamField query="deviceId" type="integer">
+  Return only geofences linked to a specific device.
+</ParamField>
+
+<ParamField query="groupId" type="integer">
+  Return only geofences linked to a specific group.
+</ParamField>
+
+<ParamField query="refresh" type="boolean">
+  Force a cache refresh. Rarely needed in normal use.
+</ParamField>
+
+<ParamField query="limit" type="integer">
+  Maximum number of records to return.
+</ParamField>
+
+<ParamField query="offset" type="integer">
+  Number of records to skip for pagination.
+</ParamField>
+
+<ParamField query="keyword" type="string">
+  Search keyword filter.
+</ParamField>
+
+```bash
+# All geofences for the current user
+curl -u admin:password http://localhost:8082/api/geofences
+
+# Geofences already linked to device 1
+curl -u admin:password 'http://localhost:8082/api/geofences?deviceId=1'
+```
+
+---
+
+### POST /api/geofences
+
+Create a new geofence.
+
+<ParamField body="name" type="string" required>
+  Display name for the geofence.
+</ParamField>
+
+<ParamField body="area" type="string" required>
+  WKT boundary string (CIRCLE, POLYGON, or LINESTRING).
+</ParamField>
+
+<ParamField body="description" type="string">
+  Optional description shown in the UI.
+</ParamField>
+
+<ParamField body="calendarId" type="integer">
+  Optional calendar to restrict when the geofence is active.
+</ParamField>
+
+<ParamField body="attributes" type="object">
+  Optional custom attributes, including `polylineDistance` for corridor width.
+</ParamField>
+
+<Tabs>
+  <Tab title="Circle">
+    ```bash
+    curl -X POST -u admin:password \
+      -H 'Content-Type: application/json' \
+      -d '{
+        "name": "Office Zone",
+        "description": "500-meter radius around headquarters",
+        "area": "CIRCLE (37.7749 -122.4194 500)",
+        "attributes": {}
+      }' \
+      http://localhost:8082/api/geofences
+    ```
+  </Tab>
+  <Tab title="Polygon">
+    ```bash
+    curl -X POST -u admin:password \
+      -H 'Content-Type: application/json' \
+      -d '{
+        "name": "Restricted Zone",
+        "area": "POLYGON ((-122.4194 37.7749, -122.4094 37.7749, -122.4094 37.7849, -122.4194 37.7849, -122.4194 37.7749))",
+        "attributes": {}
+      }' \
+      http://localhost:8082/api/geofences
+    ```
+  </Tab>
+  <Tab title="Polyline corridor">
+    ```bash
+    curl -X POST -u admin:password \
+      -H 'Content-Type: application/json' \
+      -d '{
+        "name": "Highway 101 Corridor",
+        "area": "LINESTRING (-122.4194 37.7749, -122.3994 37.7849, -122.3794 37.7949)",
+        "attributes": {"polylineDistance": 100}
+      }' \
+      http://localhost:8082/api/geofences
+    ```
+  </Tab>
+</Tabs>
+
+**Example response:**
+
+```json
+{
+  "id": 1,
+  "name": "Office Zone",
+  "description": "500-meter radius around headquarters",
+  "area": "CIRCLE (37.7749 -122.4194 500)",
+  "calendarId": 0,
+  "attributes": {}
+}
+```
+
+---
+
+### GET /api/geofences/{id}
+
+Fetch a single geofence by its internal ID.
+
+<ParamField path="id" type="integer" required>
+  Internal geofence identifier.
+</ParamField>
+
+```bash
+curl -u admin:password http://localhost:8082/api/geofences/1
+```
+
+---
+
+### PUT /api/geofences/{id}
+
+Update an existing geofence. Send the full geofence object including unchanged fields.
+
+<ParamField path="id" type="integer" required>
+  Internal geofence identifier.
+</ParamField>
+
+```bash
+curl -X PUT -u admin:password \
+  -H 'Content-Type: application/json' \
+  -d '{
+    "id": 1,
+    "name": "Office Zone — Expanded",
+    "area": "CIRCLE (37.7749 -122.4194 1000)",
+    "attributes": {}
+  }' \
+  http://localhost:8082/api/geofences/1
+```
+
+---
+
+### DELETE /api/geofences/{id}
+
+Delete a geofence. Existing permission links to devices and groups are also removed.
+
+<ParamField path="id" type="integer" required>
+  Internal geofence identifier.
+</ParamField>
+
+```bash
+curl -X DELETE -u admin:password http://localhost:8082/api/geofences/1
+```
+
+Returns `204 No Content` on success.
+
+---
+
+## Linking Geofences to Devices
+
+Creating a geofence does not automatically apply it to any device. You must link the geofence to specific devices (or groups) using the Permissions API. Traccar will then evaluate the geofence against incoming positions from those devices.
+
+```bash
+# Apply geofence 1 to device 1
+curl -X POST -u admin:password \
+  -H 'Content-Type: application/json' \
+  -d '{"deviceId":1,"geofenceId":1}' \
+  http://localhost:8082/api/permissions
+
+# Apply geofence 1 to all devices in group 2
+curl -X POST -u admin:password \
+  -H 'Content-Type: application/json' \
+  -d '{"groupId":2,"geofenceId":1}' \
+  http://localhost:8082/api/permissions
+
+# Give user 3 access to geofence 1
+curl -X POST -u admin:password \
+  -H 'Content-Type: application/json' \
+  -d '{"userId":3,"geofenceId":1}' \
+  http://localhost:8082/api/permissions
+```
+
+<Note>
+  Permissions are described in detail in the [Users & Permissions](/api/users-permissions) reference.
+</Note>
+
+---
+
+## Altitude Filtering
+
+Geofences support optional altitude constraints through the `attributes` map. Set `floor` and/or `ceiling` (both in meters) to restrict the geofence to positions within a vertical range. Positions outside the altitude band are treated as outside the geofence regardless of horizontal location.
+
+```json
+{
+  "name": "Ground Floor Only",
+  "area": "POLYGON ((-122.4194 37.7749, ...))",
+  "attributes": {
+    "floor": 0,
+    "ceiling": 10
+  }
+}
+```

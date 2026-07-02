@@ -1,0 +1,120 @@
+{
+  "projectType": "saas",
+  "projectName": "Traccar",
+  "projectDescription": "Traccar is an open-source GPS tracking system that supports 200+ device protocols and provides a REST API for real-time tracking, geofencing, notifications, and fleet management.",
+  "theme": "aspen",
+  "primaryColor": "#7c7c7c",
+  "lightColor": "#0a0a0a",
+  "darkColor": "#bfbfbf",
+  "navigation": {
+    "tabs": [
+      {
+        "tab": "Documentation",
+        "groups": [
+          {
+            "group": "Getting Started",
+            "pages": [
+              "introduction",
+              "quickstart",
+              "installation"
+            ]
+          },
+          {
+            "group": "Deployment",
+            "pages": [
+              "deployment/docker",
+              "deployment/linux",
+              "deployment/database"
+            ]
+          },
+          {
+            "group": "Configuration",
+            "pages": [
+              "configuration/overview",
+              "configuration/database",
+              "configuration/protocols",
+              "configuration/notifications",
+              "configuration/authentication"
+            ]
+          },
+          {
+            "group": "Core Features",
+            "pages": [
+              "features/devices",
+              "features/tracking",
+              "features/geofences",
+              "features/events-alerts",
+              "features/reports",
+              "features/commands"
+            ]
+          }
+        ]
+      },
+      {
+        "tab": "API Reference",
+        "groups": [
+          {
+            "group": "Overview",
+            "pages": [
+              "api/overview",
+              "api/authentication"
+            ]
+          },
+          {
+            "group": "Resources",
+            "pages": [
+              "api/devices",
+              "api/positions",
+              "api/geofences",
+              "api/notifications",
+              "api/reports",
+              "api/commands",
+              "api/users-permissions"
+            ]
+          }
+        ]
+      }
+    ]
+  },
+  "keyFeatures": [
+    "Real-time GPS tracking with 200+ supported device protocols",
+    "REST API for full programmatic access",
+    "Geofencing with enter/exit event detection",
+    "Alarms and multi-channel notifications (email, SMS, Telegram, Firebase, Pushover, WhatsApp)",
+    "Detailed reports: routes, trips, stops, summary, and events",
+    "Remote device commands (lock, unlock, engine cut-off, etc.)",
+    "Driver behavior monitoring (speeding, harsh braking/acceleration)",
+    "Multi-user account management with role-based permissions",
+    "Docker-based deployment with MySQL, PostgreSQL, and H2 support",
+    "OpenID Connect and LDAP authentication",
+    "Computed attributes for custom telemetry processing",
+    "Live video streaming support"
+  ],
+  "publicApiSurface": [
+    "GET /api/session — Authenticate and get current user",
+    "POST /api/session — Login with credentials",
+    "GET /api/devices — List devices",
+    "POST /api/devices — Create device",
+    "GET /api/positions — Get latest or historical positions",
+    "GET /api/geofences — List geofences",
+    "POST /api/geofences — Create geofence",
+    "GET /api/notifications — List notifications",
+    "GET /api/reports/route — Route report",
+    "GET /api/reports/trips — Trip report",
+    "GET /api/reports/stops — Stops report",
+    "GET /api/reports/summary — Summary report",
+    "GET /api/reports/events — Events report",
+    "POST /api/commands/send — Send command to device",
+    "GET /api/events/{id} — Get event by ID",
+    "GET /api/users — List users (admin only)",
+    "POST /api/permissions — Link objects/permissions",
+    "GET /api/groups — List groups",
+    "GET /api/drivers — List drivers",
+    "GET /api/attributes/computed — List computed attributes",
+    "GET /api/maintenance — List maintenance records",
+    "GET /api/calendars — List calendars",
+    "GET /api/statistics — Server statistics (admin only)",
+    "GET /api/server — Server configuration",
+    "GET /api/audit — Audit log (admin only)"
+  ]
+}

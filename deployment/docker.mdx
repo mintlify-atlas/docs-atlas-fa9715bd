@@ -1,0 +1,223 @@
+---
+title: "Deploy Traccar with Docker and Docker Compose"
+sidebarTitle: "Docker"
+description: "Run Traccar in Docker using the official image. Includes Docker Compose examples with MySQL and TimescaleDB for production deployments."
+---
+
+Docker is the recommended way to run Traccar in production. The official image `traccar/traccar` is published on Docker Hub and bundles a custom JRE built with `jlink` — no separate Java installation is needed. The image is available in two flavours: `debian`-based (default) and `alpine`-based, both built from the same multi-stage `Dockerfile` that copies only the application and a stripped-down JRE into the final layer.
+
+## Quick Start
+
+The snippet below runs a single Traccar container with three bind-mount volumes so that configuration, logs, and data survive container restarts and upgrades.
+
+```yaml
+services:
+  traccar:
+    image: traccar/traccar:latest
+    container_name: traccar
+    restart: unless-stopped
+    ports:
+      - "8082:8082"
+      - "5055:5055"   # OsmAnd / GPS Logger
+    volumes:
+      - ./traccar/conf:/opt/traccar/conf
+      - ./traccar/logs:/opt/traccar/logs
+      - ./traccar/data:/opt/traccar/data
+```
+
+Save this as `compose.yaml`, then start it:
+
+```bash
+docker compose up -d
+```
+
+<Warning>
+Never run Traccar without persistent volume mounts. Without them, your configuration, database, and logs are lost every time the container is recreated or upgraded.
+</Warning>
+
+<Tip>
+Always set `restart: unless-stopped` (or `restart: always`) so Traccar recovers automatically after a host reboot or an unexpected crash.
+</Tip>
+
+## Production with MySQL
+
+The following Compose file is the official `traccar-mysql.yaml` from the Traccar repository. It wires together a MySQL LTS container, the Traccar server, and an `autoheal` sidecar that restarts any unhealthy container automatically.
+
+Database credentials are passed to Traccar as environment variables using `CONFIG_USE_ENVIRONMENT_VARIABLES: "true"`, which maps `DATABASE_DRIVER`, `DATABASE_URL`, `DATABASE_USER`, and `DATABASE_PASSWORD` directly to their `traccar.xml` equivalents.
+
+```yaml
+services:
+
+  database:
+    image: mysql:lts
+    restart: unless-stopped
+    environment:
+      MYSQL_RANDOM_ROOT_PASSWORD: "yes"
+      MYSQL_DATABASE: traccar
+      MYSQL_USER: traccar
+      MYSQL_PASSWORD: traccar
+    volumes:
+      - /opt/traccar/data:/var/lib/mysql
+
+  traccar:
+    image: traccar/traccar:latest
+    restart: unless-stopped
+    depends_on:
+      - database
+    environment:
+      CONFIG_USE_ENVIRONMENT_VARIABLES: "true"
+      DATABASE_DRIVER: com.mysql.cj.jdbc.Driver
+      DATABASE_URL: >-
+        jdbc:mysql://database:3306/traccar
+        ?zeroDateTimeBehavior=round
+        &serverTimezone=UTC
+        &allowPublicKeyRetrieval=true
+        &useSSL=false
+        &allowMultiQueries=true
+        &autoReconnect=true
+        &useUnicode=yes
+        &characterEncoding=UTF-8
+        &sessionVariables=sql_mode=''
+      DATABASE_USER: traccar
+      DATABASE_PASSWORD: traccar
+    healthcheck:
+      test: [ "CMD", "wget", "-q", "--spider", "http://localhost:8082/api/health" ]
+      interval: 2m
+      timeout: 5s
+      start_period: 1h
+      retries: 3
+    ports:
+      - "8082:8082"
+      - "5000-5500:5000-5500"
+    volumes:
+      - /opt/traccar/logs:/opt/traccar/logs
+
+  autoheal:
+    image: willfarrell/autoheal:latest
+    restart: always
+    environment:
+      AUTOHEAL_CONTAINER_LABEL: all
+      AUTOHEAL_INTERVAL: 60
+      AUTOHEAL_START_PERIOD: 3600
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+```
+
+## Production with TimescaleDB
+
+TimescaleDB is a PostgreSQL extension optimised for time-series data, making it a strong choice for high-volume position ingestion. The Compose file below mirrors the official `traccar-timescaledb.yaml` from the repository.
+
+```yaml
+services:
+
+  database:
+    image: timescale/timescaledb:latest-pg17
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: traccar
+      POSTGRES_USER: traccar
+      POSTGRES_PASSWORD: traccar
+      TIMESCALEDB_TELEMETRY: "off"
+    volumes:
+      - /opt/traccar/data:/var/lib/postgresql/data
+
+  traccar:
+    image: traccar/traccar:latest
+    restart: unless-stopped
+    depends_on:
+      - database
+    environment:
+      CONFIG_USE_ENVIRONMENT_VARIABLES: "true"
+      DATABASE_DRIVER: org.postgresql.Driver
+      DATABASE_URL: jdbc:postgresql://database:5432/traccar
+      DATABASE_USER: traccar
+      DATABASE_PASSWORD: traccar
+    healthcheck:
+      test: [ "CMD", "wget", "-q", "--spider", "http://localhost:8082/api/health" ]
+      interval: 2m
+      timeout: 5s
+      start_period: 1h
+      retries: 3
+    ports:
+      - "8082:8082"
+      - "5000-5500:5000-5500"
+    volumes:
+      - /opt/traccar/logs:/opt/traccar/logs
+
+  autoheal:
+    image: willfarrell/autoheal:latest
+    restart: always
+    environment:
+      AUTOHEAL_CONTAINER_LABEL: all
+      AUTOHEAL_INTERVAL: 60
+      AUTOHEAL_START_PERIOD: 3600
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+```
+
+<Note>
+The `database.positionPeriod` key (default 90 days) limits how far back Traccar scans when loading the latest position per device. This is especially valuable with TimescaleDB's partitioned time chunks — set it to match your data retention window for best query performance.
+</Note>
+
+## Configuration
+
+Traccar reads its configuration from `/opt/traccar/conf/traccar.xml` inside the container. When you use the environment-variable approach shown above (`CONFIG_USE_ENVIRONMENT_VARIABLES: "true"`), you can skip mounting a config file entirely and supply every key as an uppercased, underscore-separated environment variable.
+
+If you prefer a mounted config file, place `traccar.xml` on the host and bind-mount it:
+
+```yaml
+volumes:
+  - ./traccar/conf/traccar.xml:/opt/traccar/conf/traccar.xml
+```
+
+The equivalent XML for the MySQL connection string looks like this:
+
+```xml
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE properties SYSTEM 'http://java.sun.com/dtd/properties.dtd'>
+<properties>
+    <entry key='database.driver'>com.mysql.cj.jdbc.Driver</entry>
+    <entry key='database.url'>jdbc:mysql://db/traccar?serverTimezone=UTC&amp;allowMultiQueries=true&amp;autoReconnect=true&amp;useSSL=false</entry>
+    <entry key='database.user'>traccar</entry>
+    <entry key='database.password'>traccar</entry>
+</properties>
+```
+
+## Exposing Device Ports
+
+Traccar supports hundreds of GPS protocols, each listening on its own TCP or UDP port. The production Compose files above map the entire range `5000–5500` in a single rule. If you prefer explicit, per-protocol mappings, add them under the `ports` key:
+
+```yaml
+ports:
+  - "8082:8082"    # Web interface / API
+  - "5055:5055"    # OsmAnd / GPS Logger
+  - "5023:5023"    # GT06 (Concox, JiMi, …)
+  - "5027:5027"    # Teltonika
+  - "5001:5001"    # Gps-gate / Xexun
+  - "5013:5013"    # GlobalSat
+```
+
+<Tip>
+Exposing the full `5000-5500` range is the simplest approach for most deployments. If your host has a restrictive firewall, enumerate only the ports matching the protocols your devices use.
+</Tip>
+
+## Health Check
+
+Traccar exposes a lightweight health endpoint. Use it to verify the server is responding:
+
+```bash
+curl http://localhost:8082/api/health
+```
+
+A running server returns HTTP 200. The production Compose files above configure Docker's built-in `healthcheck` to poll this endpoint every two minutes, allowing `autoheal` to restart the container if it becomes unresponsive.
+
+## Upgrading
+
+Pull the latest image and recreate the container — Docker Compose handles the rest:
+
+```bash
+docker compose pull
+docker compose up -d
+```
+
+Because Traccar uses Liquibase for database schema management, any required migrations are applied automatically on the first startup after an upgrade.

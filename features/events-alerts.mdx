@@ -1,0 +1,202 @@
+---
+title: "Events, Alarms, and Alert Notifications in Traccar"
+sidebarTitle: "Events & Alerts"
+description: "Traccar generates events for device state changes, geofence crossings, alarms, and driver behavior. Subscribe to notifications via email, Telegram, SMS, and more."
+---
+
+Traccar generates structured events as devices report new positions. Events cover everything from status changes to geofence crossings, alarms, and driver behavior anomalies. Users subscribe to event types and receive notifications through their configured channels. Each event record is associated with a device, an optional position, and an optional linked entity (geofence, maintenance schedule, etc.).
+
+## Event Types
+
+All event type constants are defined in `Event.java`. They are organized below by functional category.
+
+### Device Status
+
+| Event Type | Description |
+|---|---|
+| `deviceOnline` | Device has connected or sent a heartbeat within the timeout window |
+| `deviceOffline` | Device has not reported within the configured timeout |
+| `deviceUnknown` | Device is in an intermediate state between online and offline |
+| `deviceInactive` | Device has been inactive for an extended period |
+| `queuedCommandSent` | A queued (offline) command was delivered to the device |
+
+### Motion
+
+| Event Type | Description |
+|---|---|
+| `deviceMoving` | Device has transitioned from stopped to moving |
+| `deviceStopped` | Device has transitioned from moving to stopped |
+
+### Speed
+
+| Event Type | Description |
+|---|---|
+| `deviceOverspeed` | Device speed exceeded the configured threshold for the required duration |
+
+### Fuel
+
+| Event Type | Description |
+|---|---|
+| `deviceFuelDrop` | Fuel level dropped by more than the configured threshold |
+| `deviceFuelIncrease` | Fuel level increased by more than the configured threshold (e.g., refueling) |
+
+### Geofence
+
+| Event Type | Description |
+|---|---|
+| `geofenceEnter` | Device crossed into a geofence boundary |
+| `geofenceExit` | Device crossed out of a geofence boundary |
+
+### Proximity
+
+| Event Type | Description |
+|---|---|
+| `proximityEnter` | Device came within the enter-distance threshold of a linked device |
+| `proximityExit` | Device moved beyond the exit-distance threshold of a linked device |
+| `unaccompaniedMotion` | Device started moving while no linked devices were within range |
+
+### Alarms
+
+| Event Type | Description |
+|---|---|
+| `alarm` | A device-reported alarm; the specific type is in the `alarm` attribute |
+
+Alarm subtypes (values of `Position.KEY_ALARM`) include: `general`, `sos`, `vibration`, `movement`, `overspeed`, `lowspeed`, `fallDown`, `lowPower`, `lowBattery`, `fault`, `powerOff`, `powerOn`, `powerCut`, `powerRestored`, `door`, `lock`, `unlock`, `geofenceEnter`, `geofenceExit`, `gpsAntennaCut`, `accident`, `tow`, `idle`, `highRpm`, `hardAcceleration`, `hardBraking`, `hardCornering`, `laneChange`, `fatigueDriving`, `jamming`, `temperature`, `parking`, `bonnet`, `footBrake`, `fuelLeak`, `tampering`, `removing`.
+
+### Ignition
+
+| Event Type | Description |
+|---|---|
+| `ignitionOn` | Ignition transitioned from off to on |
+| `ignitionOff` | Ignition transitioned from on to off |
+
+### Other
+
+| Event Type | Description |
+|---|---|
+| `maintenance` | A maintenance interval threshold was crossed |
+| `driverChanged` | The active driver (RFID/iButton) changed |
+| `media` | Device sent a media attachment (photo, video, audio) |
+| `commandResult` | A response was received from a previously sent command |
+
+## Event Handlers
+
+Each event type is produced by a dedicated handler class in `org.traccar.handler.events`. Handlers are invoked on every incoming position.
+
+<CardGroup cols={2}>
+  <Card title="AlarmEventHandler" icon="bell">
+    Reads the `alarm` attribute from the position. Supports multiple comma-separated alarm values in a single position. Can suppress duplicate consecutive alarms when `event.ignoreDuplicateAlerts` is enabled.
+  </Card>
+  <Card title="BehaviorEventHandler" icon="gauge-high">
+    Computes instantaneous acceleration between the current and previous positions. Emits `alarm` events with `hardAcceleration` or `hardBraking` when the calculated value exceeds the configured thresholds.
+  </Card>
+  <Card title="OverspeedEventHandler" icon="tachometer-alt">
+    Compares the device's speed against a configured speed limit (device attribute, geofence attribute, or position-reported limit). Emits `deviceOverspeed` after the device exceeds the limit for at least the configured minimum duration.
+  </Card>
+  <Card title="GeofenceEventHandler" icon="draw-polygon">
+    Compares the set of active geofences between the current and previous positions. Emits `geofenceEnter` for newly entered geofences and `geofenceExit` for departed ones, respecting calendar-based activation.
+  </Card>
+  <Card title="IgnitionEventHandler" icon="key">
+    Monitors the `ignition` attribute. Emits `ignitionOn` when it transitions false → true and `ignitionOff` when it transitions true → false.
+  </Card>
+  <Card title="MotionEventHandler" icon="person-running">
+    Tracks device movement state based on the `motion` attribute and speed. Emits `deviceMoving` and `deviceStopped` using configurable minimum duration and distance thresholds.
+  </Card>
+  <Card title="MaintenanceEventHandler" icon="wrench">
+    Evaluates each linked `Maintenance` schedule against the current position's tracked attribute value (e.g., `odometer`, `hours`). Emits a `maintenance` event when a service interval threshold is crossed.
+  </Card>
+  <Card title="DriverEventHandler" icon="id-card">
+    Monitors the `driverUniqueId` attribute. Emits a `driverChanged` event when the driver identifier changes between consecutive positions.
+  </Card>
+  <Card title="FuelEventHandler" icon="gas-pump">
+    Compares the `fuel` attribute between consecutive positions. Emits `deviceFuelDrop` or `deviceFuelIncrease` when the change meets or exceeds the configured per-device threshold.
+  </Card>
+  <Card title="ProximityEventHandler" icon="circle-dot">
+    Evaluates the distance between a device and all linked devices. Emits proximity events based on enter/exit distance thresholds, and `unaccompaniedMotion` when a device starts moving without a companion nearby.
+  </Card>
+  <Card title="CommandResultEventHandler" icon="terminal">
+    Listens for positions carrying a `result` attribute (the device's response to a sent command) and emits a `commandResult` event.
+  </Card>
+  <Card title="MediaEventHandler" icon="photo-film">
+    Detects positions carrying image, video, or audio attachments and emits a `media` event.
+  </Card>
+</CardGroup>
+
+## Configuration Keys
+
+Event behavior is tuned through the following configuration keys in `traccar.xml` (or as device/group attributes where supported):
+
+### Overspeed
+
+| Key | Default | Description |
+|---|---|---|
+| `event.overspeed.thresholdMultiplier` | `1.0` | Multiplier applied to the speed limit before triggering (e.g., `1.1` allows 10% over) |
+| `event.overspeed.minimalDuration` | `0` | Minimum seconds the device must exceed the limit before an event fires |
+| `event.overspeed.preferLowest` | `false` | When multiple geofence speed limits apply, use the lowest rather than the highest |
+
+### Behavior (Harsh Driving)
+
+| Key | Default | Description |
+|---|---|---|
+| `event.behavior.accelerationThreshold` | `0` | Acceleration threshold in m/s² to trigger `hardAcceleration` |
+| `event.behavior.brakingThreshold` | `0` | Deceleration threshold in m/s² to trigger `hardBraking` |
+
+### Motion
+
+| Key | Default | Description |
+|---|---|---|
+| `event.motion.speedThreshold` | `0.01` | Speed in knots below which a device is considered stopped |
+
+### Fuel
+
+| Key | Description |
+|---|---|
+| `event.fuel.dropThreshold` | Fuel decrease (liters) that triggers `deviceFuelDrop` |
+| `event.fuel.increaseThreshold` | Fuel increase (liters) that triggers `deviceFuelIncrease` |
+
+### General
+
+| Key | Default | Description |
+|---|---|---|
+| `event.ignoreDuplicateAlerts` | `false` | Suppress alarm events that repeat the same alarm type as the previous position |
+
+## Notification Channels
+
+Users configure notification rules by selecting event types and delivery channels. Supported channels include:
+
+<CardGroup cols={3}>
+  <Card title="Email" icon="envelope">
+    SMTP-based email delivery. Configure server settings in `traccar.xml` under the `mail.*` keys.
+  </Card>
+  <Card title="Telegram" icon="telegram">
+    Bot-based notifications via Telegram. Set `telegram.chatId` and `telegram.token` per user or globally.
+  </Card>
+  <Card title="SMS" icon="message-sms">
+    SMS delivery via configured SMS gateway. Requires `sms.gsm.*` or third-party provider configuration.
+  </Card>
+  <Card title="Firebase Push" icon="mobile">
+    Push notifications to the Traccar mobile app (Android/iOS) via Firebase Cloud Messaging.
+  </Card>
+  <Card title="Pushover" icon="bell">
+    Notifications via the Pushover service. Requires a Pushover API token.
+  </Card>
+  <Card title="Web Push" icon="browser">
+    Browser push notifications for desktop users of the Traccar web interface.
+  </Card>
+</CardGroup>
+
+## API Example
+
+```bash
+# Get all events for a device over a 24-hour window
+curl -u admin:password \
+  'http://localhost:8082/api/reports/events?deviceId=1&from=2024-01-01T00:00:00Z&to=2024-01-02T00:00:00Z'
+
+# Filter by specific event type
+curl -u admin:password \
+  'http://localhost:8082/api/reports/events?deviceId=1&type=geofenceEnter&from=2024-01-01T00:00:00Z&to=2024-01-07T00:00:00Z'
+
+# Filter alarm events by alarm subtype
+curl -u admin:password \
+  'http://localhost:8082/api/reports/events?deviceId=1&type=alarm&alarm=sos&from=2024-01-01T00:00:00Z&to=2024-01-31T23:59:59Z'
+```

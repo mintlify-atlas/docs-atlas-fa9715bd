@@ -1,0 +1,217 @@
+---
+title: "Configure GPS Device Protocols in Traccar"
+sidebarTitle: "Protocols"
+description: "Configure protocol ports, SSL, timeouts, and device-specific settings in traccar.xml. Traccar supports 200+ GPS protocols over TCP and UDP."
+---
+
+Traccar listens for incoming connections from GPS tracking devices on protocol-specific TCP or UDP ports. Each protocol decoder is independent; enabling a protocol is as simple as adding a single `<entry>` to `traccar.xml` with the port number. Traccar ships with decoders for over 267 protocols, covering thousands of device models from hundreds of manufacturers worldwide.
+
+<Note>
+  After adding or changing protocol ports in `traccar.xml`, you must restart the Traccar server and open the new port(s) in your server's firewall.
+</Note>
+
+---
+
+## How protocol configuration works
+
+Every protocol has a lowercase name prefix (e.g. `teltonika`, `gt06`, `osmand`). Append a configuration suffix to that prefix to set a parameter for that protocol.
+
+### Configuration suffixes
+
+| Suffix | Type | Description |
+|--------|------|-------------|
+| `<protocol>.port` | integer | **Required to enable the protocol.** TCP (or UDP) port number to listen on. |
+| `<protocol>.address` | string | Network interface to bind to. If not specified, the server binds to all interfaces. Multiple addresses (IPv4 and IPv6) can be supplied as a comma-separated list. |
+| `<protocol>.ssl` | boolean | Enable SSL/TLS on this protocol listener. Not all protocols support SSL. |
+| `<protocol>.timeout` | integer | Per-protocol connection timeout in seconds. Overrides `server.timeout` for this protocol. |
+| `<protocol>.devicePassword` | string | Device-level password used for authenticating commands sent to the device. |
+| `<protocol>.devices` | string | Comma-separated list of unique device IDs. Used only for polling protocols where the server initiates contact. |
+| `<protocol>.interval` | long | Polling interval in seconds. Used only for protocols that require the server to poll devices. |
+| `<protocol>.extended` | boolean | Enable extended functionality. Some devices support richer data formats that are disabled by default for compatibility. |
+| `<protocol>.utf8` | boolean | Decode string fields as UTF-8 instead of ASCII. Only applicable for some protocols. |
+| `<protocol>.can` | boolean | Enable CAN bus data decoding. Not supported by all devices. |
+
+---
+
+## Example configuration
+
+```xml
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE properties SYSTEM 'http://java.sun.com/dtd/properties.dtd'>
+<properties>
+
+    <!-- Database (required) -->
+    <entry key='database.driver'>org.h2.Driver</entry>
+    <entry key='database.url'>jdbc:h2:./data/database</entry>
+    <entry key='database.user'>sa</entry>
+    <entry key='database.password'></entry>
+
+    <!-- OsmAnd / GPS Logger HTTP protocol -->
+    <entry key='osmand.port'>5055</entry>
+
+    <!-- Teltonika FMB/FMT/FMP/FMC series (TCP + UDP) -->
+    <entry key='teltonika.port'>5027</entry>
+
+    <!-- GT06 / GT02 family (Concox, Jimi IoT, iStartek, Gosafe) -->
+    <entry key='gt06.port'>5023</entry>
+
+    <!-- Queclink GL/GV/GS series -->
+    <entry key='gl200.port'>5004</entry>
+
+    <!-- Ruptela FM-Eco / FM-Pro / FM-Tco -->
+    <entry key='ruptela.port'>7354</entry>
+
+    <!-- Coban TK-103 compatible devices -->
+    <entry key='tk103.port'>5002</entry>
+
+    <!-- Galileosky v4/v5/v6/v7 -->
+    <entry key='galileo.port'>7001</entry>
+
+    <!-- Wialon IPS -->
+    <entry key='wialon.port'>20332</entry>
+
+    <!-- Meitrack T1/T3/MVT series -->
+    <entry key='meitrack.port'>5020</entry>
+
+    <!-- Enfora (Sierra Wireless) -->
+    <entry key='enfora.port'>5016</entry>
+
+</properties>
+```
+
+<Tip>
+  To verify that a device is successfully connecting and sending data, open the Traccar web interface, navigate to **Settings → Devices**, select your device, and watch the **Last Update** timestamp. You can also monitor the server log at `./logs/tracker-server.log`.
+</Tip>
+
+---
+
+## Common protocols reference
+
+The table below lists commonly used protocol names and example ports. Port numbers are conventions — you can use any available port on your server.
+
+<Tabs>
+  <Tab title="Consumer & OBD">
+
+| Protocol name | Example port | Common devices |
+|---------------|-------------|----------------|
+| `osmand` | 5055 | OsmAnd app, GPS Logger app |
+| `gt06` | 5023 | Concox GT06, Jimi JM-LL01, iStartek VT series |
+| `tk103` | 5002 | Coban TK-103, TK-102, TK-303 |
+| `tk102` | 5014 | TK-102 GPS tracker |
+| `totem` | 5007 | Totem AT05/AT07 |
+| `meitrack` | 5020 | Meitrack T1/T3/MVT/P88 |
+| `watch` | 5093 | Kids smartwatch / personal tracker |
+| `xexun` | 5006 | Xexun XT009/XT107 |
+
+  </Tab>
+  <Tab title="Professional / Fleet">
+
+| Protocol name | Example port | Common devices |
+|---------------|-------------|----------------|
+| `teltonika` | 5027 | Teltonika FMB/FMT/FMC/FMP series |
+| `gl200` | 5004 | Queclink GV series, GL series |
+| `ruptela` | 7354 | Ruptela FM-Eco4/Pro4/Tco4 |
+| `galileo` | 7001 | Galileosky v4/v5/v7 |
+| `atrack` | 5170 | ATrack AX5/AX7/AT5 |
+| `calamp` | 5500 | CalAmp LMU/TTU series |
+| `cellocator` | 5033 | Cellocator CR200/CR300 |
+| `castel` | 5034 | Castel MPX series |
+| `eelink` | 5049 | Eelink TK-419/GME-10 |
+| `wialon` | 20332 | Wialon IPS protocol |
+| `suntech` | 5011 | Suntech ST300/ST310/ST410 |
+
+  </Tab>
+  <Tab title="Industrial / Satellite">
+
+| Protocol name | Example port | Common devices |
+|---------------|-------------|----------------|
+| `egts` | 5100 | EGTS (Russian GLONASS standard) |
+| `t55` | 5024 | Xirgo XT-2000/XT-4900 (TAIP/NMEA) |
+| `taip` | 5185 | Trimble/PeopleNet TAIP protocol |
+| `aplicom` | 5086 | Aplicom A Series |
+| `enfora` | 5016 | Sierra Wireless (Enfora) MT-Gu |
+| `ulbotech` | 5168 | Ulbotech T381 |
+| `tramigo` | 5087 | Tramigo T22/T23/T24 |
+| `arnavi` | 5176 | Arnavi Integral4 |
+| `aura` | 5138 | AuroProtocol devices |
+| `bce` | 5108 | BCE devices |
+
+  </Tab>
+  <Tab title="HTTP-based">
+
+| Protocol name | Example port | Common devices |
+|---------------|-------------|----------------|
+| `osmand` | 5055 | OsmAnd, GPSLogger (Android) |
+| `traccar` | 5055 | Traccar Client mobile app |
+| `ttnhttp` | 5136 | The Things Network LoRaWAN |
+| `cradlepoint` | 5206 | Cradlepoint IBR routers |
+| `dmthttp` | 5241 | DMT HTTP protocol |
+
+  </Tab>
+</Tabs>
+
+**Full protocol list (all 267+ decoders):**
+
+`adm`, `ais`, `alematics`, `anytrek`, `apel`, `aplicom`, `appello`, `aquila`, `ardi01`, `arknav`, `arknavx8`, `armoli`, `arnavi`, `astra`, `at2000`, `atrack`, `auro`, `austinnb`, `autofon`, `autograde`, `autotrack`, `avema`, `avl301`, `b2316`, `bce`, `blackkite`, `blue`, `box`, `bstpl`, `bws`, `c2stek`, `calamp`, `carcell`, `carscop`, `cartrack`, `castel`, `cautela`, `cellocator`, `cguard`, `cityeasy`, `continental`, `cradlepoint`, `dingtek`, `disha`, `dmt`, `dmthttp`, `dolphin`, `dragino`, `dsf22`, `dualcam`, `dway`, `easytrack`, `eelink`, `egts`, `enfora`, `ennfu`, `envotech`, `eseal`, `esky`, `extremtrac`, `fifotrack`, `flespi`, `flycat`, `freebird`, `galileo`, `gator`, `gl200`, `globalsat`, `gosafe`, `gotop`, `gps103`, `gpsmta`, `gpsgate`, `gpsmapper`, `gt06`, `guard`, `h02`, `haier`, `hoopo`, `hxt`, `intellitrac`, `its`, `ivt401`, `j2303`, `jido`, `jointech`, `jt600`, `khdprotocol`, `laipac`, `lx`, `m2m`, `megastek`, `meitrack`, `mictrack`, `minifinder`, `mirutrack`, `mobilogix`, `monocar`, `mortrack`, `mta6`, `mv61`, `mxt`, `navis`, `navtelecom`, `nd100`, `niot`, `noform`, `novatel`, `novus`, `orbcomm`, `osmand`, `ott`, `outbound`, `pan`, `pegase`, `piligrim`, `pl3000`, `port`, `progressa`, `pt3000`, `pt502`, `pt60`, `queclink`, `radar`, `retranslator`, `rftrack`, `robsotek`, `robotrack`, `rsd`, `ruptela`, `s168`, `satrack`, `satsol`, `sigfox`, `skypatrol`, `smartsole`, `solarpower`, `solarus`, `startrek`, `startrack`, `suntech`, `supermate`, `svias`, `swiftech`, `t55`, `t57`, `t622iridium`, `t800x`, `taip`, `techtltcruz`, `tek`, `telemax`, `telic`, `teltonika`, `teratrack`, `thinkpower`, `thinkrace`, `thuraya`, `tk102`, `tk103`, `tlt2h`, `tlv`, `tmg`, `topflytech`, `topin`, `totem`, `tr20`, `tr900`, `trackbox`, `trakmate`, `tramigo`, `transync`, `trv`, `tt8850`, `ttnhttp`, `tytan`, `tzone`, `ulbotech`, `upro`, `uux`, `v680`, `valtrack`, `visiontek`, `vlt`, `vnet`, `vt200`, `vtfms`, `watch`, `wialon`, `wli`, `wonderex`, `wristband`, `xexun`, `xexun2`, `xexun3`, `xirgo`, `xrb28`, `xt013`, `xt2400`, `ywt`
+
+---
+
+## UDP protocols
+
+Some protocols operate over UDP instead of TCP (e.g. many OBD and personal tracker protocols). The configuration key is identical — Traccar automatically selects the correct transport layer based on the protocol's implementation. No extra configuration is needed:
+
+```xml
+<!-- UDP protocol — configuration is the same as TCP -->
+<entry key='osmand.port'>5055</entry>
+```
+
+Some protocols support both TCP and UDP simultaneously on the same port.
+
+---
+
+## Polling protocols
+
+A small number of protocols are "polling" protocols where the server must initiate communication with the device (rather than the device calling in). Configure these with the `.devices` and `.interval` suffixes:
+
+```xml
+<!-- Poll devices every 60 seconds -->
+<entry key='myprotocol.port'>5099</entry>
+<entry key='myprotocol.devices'>device1_id,device2_id,device3_id</entry>
+<entry key='myprotocol.interval'>60</entry>
+```
+
+The `.devices` value is a comma-separated list of unique device identifiers as they appear in the Traccar database. The `.interval` value is in seconds.
+
+---
+
+## Firewall configuration
+
+After enabling a protocol, open the corresponding port in your OS firewall:
+
+<Tabs>
+  <Tab title="firewalld (RHEL/CentOS)">
+```bash
+sudo firewall-cmd --permanent --add-port=5027/tcp
+sudo firewall-cmd --permanent --add-port=5055/tcp
+sudo firewall-cmd --reload
+```
+  </Tab>
+  <Tab title="ufw (Ubuntu/Debian)">
+```bash
+sudo ufw allow 5027/tcp
+sudo ufw allow 5055/tcp
+sudo ufw reload
+```
+  </Tab>
+  <Tab title="iptables">
+```bash
+sudo iptables -A INPUT -p tcp --dport 5027 -j ACCEPT
+sudo iptables -A INPUT -p tcp --dport 5055 -j ACCEPT
+sudo iptables-save > /etc/iptables/rules.v4
+```
+  </Tab>
+</Tabs>
+
+<Note>
+  If Traccar is behind a NAT gateway or cloud load balancer, make sure both the OS firewall and the network security group/ACL allow the device ports. Devices must be able to reach the public IP of your Traccar server on the configured port.
+</Note>

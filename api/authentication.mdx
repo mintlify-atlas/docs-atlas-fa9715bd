@@ -1,0 +1,250 @@
+---
+title: "Authenticate with the Traccar REST API"
+sidebarTitle: "Authentication"
+description: "Three ways to authenticate Traccar API requests: HTTP Basic Auth, long-lived API tokens, and session cookies. Includes token creation, TOTP, and OpenID Connect."
+---
+
+Every Traccar API request (except the health check at `GET /api/health`) requires authentication. The API supports HTTP Basic Auth for simple scripts, token-based auth for long-running integrations, and session cookies for web applications. All three methods are handled by the same `SecurityRequestFilter` on the server, which inspects the `Authorization` header first and falls back to the session cookie.
+
+## Method 1: HTTP Basic Auth
+
+The simplest approach — combine your email address and password with a colon, Base64-encode the result, and send it in the `Authorization` header on every request.
+
+```bash
+# Using curl's -u shorthand (curl handles the encoding automatically)
+curl -u user@example.com:mypassword http://localhost:8082/api/devices
+
+# Providing the Authorization header directly
+curl -H 'Authorization: Basic dXNlckBleGFtcGxlLmNvbTpteXBhc3N3b3Jk' \
+  http://localhost:8082/api/devices
+```
+
+The server parses the `Basic` scheme, Base64-decodes the credentials, and splits on the first `:` to get the email and password. LDAP authentication is also triggered via this path when an LDAP provider is configured.
+
+<Warning>
+  Never send Basic Auth credentials over plain HTTP in production. Always use HTTPS so credentials are encrypted in transit.
+</Warning>
+
+## Method 2: API Token (Bearer)
+
+API tokens are the recommended approach for scripts, integrations, and third-party applications. A token is a cryptographically signed payload (signed with the server's private key via `CryptoManager`) that encodes the user ID, a random token ID, and an expiration timestamp.
+
+### Generating a Token
+
+First establish a session or use Basic Auth to call the token endpoint:
+
+```bash
+# Generate a token with the default expiry (7 days)
+curl -X POST -u user@example.com:mypassword \
+  http://localhost:8082/api/session/token
+
+# Generate a token that expires on a specific date
+curl -X POST -u user@example.com:mypassword \
+  -d 'expiration=2025-12-31T23:59:59Z' \
+  http://localhost:8082/api/session/token
+```
+
+The endpoint returns the token as a plain-text string. Store it securely — it cannot be retrieved again.
+
+### Using the Token
+
+Pass the token in the `Authorization: Bearer` header on subsequent requests, or supply it as the `token` query parameter:
+
+```bash
+# Authorization header (recommended)
+curl -H 'Authorization: Bearer YOUR_TOKEN_HERE' \
+  http://localhost:8082/api/devices
+
+# Query parameter (useful for quick testing or browser links)
+curl 'http://localhost:8082/api/devices?token=YOUR_TOKEN_HERE'
+```
+
+When a `token` query parameter is present on `GET /api/session`, the server also establishes a full HTTP session so the token can bootstrap a browser session.
+
+### Token Expiration
+
+Tokens default to a **7-day** expiry when no `expiration` parameter is supplied. The expiry is stored inside the signed payload as the `e` field. On every request the server calls `TokenManager.verifyToken()`, which:
+
+1. Verifies the cryptographic signature.
+2. Checks that the `expiration` date has not passed.
+3. Queries the `RevokedToken` table to confirm the token has not been explicitly revoked.
+
+If a session with its own expiry established the token, the token expiry is capped to whichever is earlier — the requested date or the session expiry.
+
+### Revoking a Token
+
+To invalidate a token before it expires, call the revoke endpoint. This records the token's unique ID in the `RevokedToken` table so it is permanently rejected:
+
+```bash
+curl -X POST \
+  -u user@example.com:mypassword \
+  -d 'token=YOUR_TOKEN_HERE' \
+  http://localhost:8082/api/session/token/revoke
+```
+
+A successful revocation returns `204 No Content`.
+
+## Method 3: Session Cookie
+
+Session cookies are the standard flow for browser-based web applications. The Traccar web UI uses this method internally.
+
+<Steps>
+  <Step title="Login">
+    POST credentials as form-encoded data. On success the server sets a `JSESSIONID` cookie and returns the authenticated `User` object as JSON.
+
+    ```bash
+    curl -X POST \
+      -d 'email=user@example.com&password=mypassword' \
+      -c cookies.txt \
+      http://localhost:8082/api/session
+    ```
+  </Step>
+  <Step title="Make authenticated requests">
+    Include the saved cookie jar on subsequent requests.
+
+    ```bash
+    curl -b cookies.txt http://localhost:8082/api/devices
+    ```
+  </Step>
+  <Step title="Logout">
+    DELETE the session to invalidate the server-side session and clear the user ID attribute.
+
+    ```bash
+    curl -X DELETE -b cookies.txt http://localhost:8082/api/session
+    ```
+  </Step>
+</Steps>
+
+The server validates the session origin on every cookie-authenticated request to protect against CSRF. Cross-origin requests without a valid `Origin` header are rejected even if the cookie is present.
+
+### Impersonating Another User (Admin / Manager Only)
+
+Admins and managers can open a session as another user without knowing their password:
+
+```bash
+# Establishes a session as user with ID 7
+curl -b cookies.txt http://localhost:8082/api/session/7
+```
+
+This returns the target `User` object and sets the session context to that user. The caller must be an administrator or a manager with access to the target user.
+
+## Two-Factor Authentication (TOTP)
+
+Traccar supports time-based one-time passwords (TOTP) via the Google Authenticator algorithm for an extra layer of login security.
+
+### Enabling TOTP
+
+Call the TOTP generation endpoint to obtain a secret key. The returned plain-text string is the TOTP secret, which you register in your authenticator app (Google Authenticator, Authy, etc.).
+
+```bash
+# Generate a new TOTP secret for the current user
+curl -X POST -u user@example.com:mypassword \
+  http://localhost:8082/api/users/totp
+```
+
+Store the secret in your authenticator app. Once the `totpKey` field is set on your user account, every subsequent login will require a valid TOTP code.
+
+### Logging In with TOTP
+
+When TOTP is active for an account, the standard `POST /api/session` login must include a `code` form parameter with the current 6-digit code:
+
+```bash
+curl -X POST \
+  -d 'email=user@example.com&password=mypassword&code=123456' \
+  -c cookies.txt \
+  http://localhost:8082/api/session
+```
+
+If the `code` is omitted but TOTP is required, the server returns `401 Unauthorized` with the header:
+
+```
+WWW-Authenticate: TOTP
+```
+
+Your application should detect this header and prompt the user for their authenticator code before retrying the login request.
+
+## OpenID Connect
+
+When OpenID Connect (OIDC) is configured on the server, users can authenticate via an external identity provider such as Google, Keycloak, or Okta. The OIDC flow is a standard authorization code flow.
+
+<Steps>
+  <Step title="Start the OIDC flow">
+    Redirect the user's browser to the Traccar OIDC auth endpoint. The server redirects to the configured identity provider's authorization URL.
+
+    ```
+    GET /api/session/openid/auth
+    → 303 Redirect to identity provider
+    ```
+  </Step>
+  <Step title="Identity provider authenticates the user">
+    The user logs in at the identity provider. On success, the provider redirects back to the Traccar callback URL with an authorization code.
+  </Step>
+  <Step title="Callback completes the session">
+    Traccar handles the callback automatically. If the user's email matches an existing account, the session is established for that user. If `OPENID_ALLOW_REGISTRATION` is enabled and no account exists, a new user account is created.
+
+    ```
+    GET /api/session/openid/callback?code=...&state=...
+    → 303 Redirect to Traccar homepage
+    ```
+  </Step>
+</Steps>
+
+If OIDC is not configured, calling `/api/session/openid/auth` returns `400 Bad Request`.
+
+## User Roles and Permissions
+
+Traccar uses a flexible permission model that determines which resources each user can access.
+
+<Tabs>
+  <Tab title="Admin Users">
+    Administrator accounts have unrestricted access to all resources and all API endpoints. Only admins can:
+    - Fetch all devices, users, and entities (`?all=true`)
+    - Modify server configuration (`PUT /api/server`)
+    - Access the audit log (`GET /api/audit`)
+    - Impersonate other users (`GET /api/session/{id}`)
+    - Trigger server operations (reboot, garbage collection)
+  </Tab>
+  <Tab title="Manager Users">
+    Managers can administer the users and devices assigned to them. They can fetch entities across their managed sub-users using `?userId=` parameters, but cannot exceed their own permission scope.
+  </Tab>
+  <Tab title="Regular Users">
+    Regular users only see the resources explicitly linked to them via the permissions system. They can filter list endpoints by their own `userId` but cannot use `?all=true`.
+
+    The `readonly` flag on a user account prevents any write operations — the user can only read linked resources.
+  </Tab>
+</Tabs>
+
+### Linking Objects via Permissions
+
+Objects in Traccar (devices, geofences, users, calendars, etc.) are linked to each other through the `Permission` model. Use `POST /api/permissions` with a JSON body containing exactly two ID fields:
+
+```json
+// Link a device to a user
+{ "userId": 5, "deviceId": 42 }
+
+// Link a geofence to a device
+{ "deviceId": 42, "geofenceId": 7 }
+
+// Link a calendar to a notification
+{ "notificationId": 3, "calendarId": 9 }
+```
+
+To remove a link, send the same body to `DELETE /api/permissions`. You can also fetch existing links with `GET /api/permissions?userId=5&deviceId=0` (use `0` to mean "any").
+
+## Security Best Practices
+
+<Note>
+  **Use HTTPS in production.** Credentials sent over plain HTTP are visible to anyone who can observe your network traffic. Always terminate TLS at your server or reverse proxy.
+</Note>
+
+<Note>
+  **Prefer API tokens over Basic Auth for integrations.** Tokens can be revoked individually without changing your account password, and they carry an expiry date. Basic Auth credentials are valid indefinitely until the password changes.
+</Note>
+
+<Note>
+  **Scope users to the minimum required devices.** Create a dedicated user account for each integration and link only the devices that integration needs via `POST /api/permissions`. This limits exposure if a token is compromised.
+</Note>
+
+<Warning>
+  **Rotate tokens periodically.** Even though tokens expire after 7 days by default, long-lived tokens with explicit far-future expiry dates should be rotated on a regular schedule. Revoke old tokens immediately after issuing replacements using `POST /api/session/token/revoke`.
+</Warning>

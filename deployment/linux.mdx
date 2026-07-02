@@ -1,0 +1,301 @@
+---
+title: "Deploy Traccar on a Linux Server"
+sidebarTitle: "Linux Server"
+description: "Install and configure Traccar as a systemd service on Ubuntu, Debian, or CentOS. Includes firewall, reverse proxy, and SSL setup."
+---
+
+Traccar can be deployed on any Linux distribution as a systemd service. The official ZIP release bundles a custom JRE built with `jlink`, so no separate Java installation is required on the host. The server process is lightweight and can run comfortably on a small virtual machine, though a production database backend is recommended for anything beyond testing.
+
+## System Requirements
+
+<CardGroup cols={2}>
+  <Card title="Minimum" icon="microchip">
+    - 1 CPU core
+    - 512 MB RAM
+    - 1 GB free disk space
+    - Ubuntu 20.04 / Debian 11 / CentOS 8+
+  </Card>
+  <Card title="Recommended for Production" icon="server">
+    - 2+ CPU cores
+    - 1 GB+ RAM
+    - SSD storage
+    - Ubuntu 22.04 LTS or Debian 12
+  </Card>
+</CardGroup>
+
+## Installation
+
+<Steps>
+  <Step title="Download the latest release">
+    Grab the Linux 64-bit ZIP from the Traccar GitHub releases page:
+
+    ```bash
+    wget https://github.com/traccar/traccar/releases/latest/download/traccar-linux-64-latest.zip
+    ```
+
+    Alternatively, browse to [github.com/traccar/traccar/releases](https://github.com/traccar/traccar/releases) and download the file that matches your architecture (`traccar-linux-64-*.zip` for x86-64, `traccar-linux-arm-*.zip` for ARM).
+  </Step>
+
+  <Step title="Create the traccar system user">
+    Run Traccar as a dedicated, non-login system account so it has no interactive shell access:
+
+    ```bash
+    sudo useradd -r -s /bin/false traccar
+    ```
+  </Step>
+
+  <Step title="Unzip the package">
+    The installer script inside the ZIP handles creating `/opt/traccar` and placing all files correctly:
+
+    ```bash
+    unzip traccar-linux-64-latest.zip
+    sudo ./traccar.run
+    ```
+
+    The self-extracting installer places the application at `/opt/traccar`, including the bundled JRE at `/opt/traccar/jre/`.
+  </Step>
+
+  <Step title="Install the systemd service">
+    The repository ships a ready-made unit file at `setup/traccar.service`. Copy it to the systemd directory:
+
+    ```bash
+    sudo cp /opt/traccar/setup/traccar.service /etc/systemd/system/traccar.service
+    ```
+
+    The unit file content is:
+
+    ```ini
+    [Unit]
+    Description=traccar
+    After=network.target
+
+    [Service]
+    Type=simple
+    WorkingDirectory=/opt/traccar
+    ExecStart=/opt/traccar/jre/bin/java -jar tracker-server.jar conf/traccar.xml
+    SyslogIdentifier=traccar
+    SuccessExitStatus=143
+    WatchdogSec=600
+    Restart=on-failure
+    RestartSec=10
+
+    [Install]
+    WantedBy=multi-user.target
+    ```
+
+    Key points:
+    - `WorkingDirectory=/opt/traccar` ensures relative paths in the config resolve correctly.
+    - `Restart=on-failure` with a 10-second back-off restarts Traccar automatically after a crash.
+    - `WatchdogSec=600` lets systemd kill and restart a frozen process after 10 minutes.
+  </Step>
+
+  <Step title="Enable and start the service">
+    Reload the systemd daemon to pick up the new unit, enable it for autostart at boot, then start it immediately:
+
+    ```bash
+    sudo systemctl daemon-reload
+    sudo systemctl enable traccar
+    sudo systemctl start traccar
+    ```
+  </Step>
+
+  <Step title="Verify the service is running">
+    Check the service status and confirm Traccar is listening on its default port:
+
+    ```bash
+    sudo systemctl status traccar
+    ```
+
+    You should see `Active: active (running)`. You can also confirm the web interface is reachable:
+
+    ```bash
+    curl -s http://localhost:8082/api/health
+    ```
+  </Step>
+</Steps>
+
+## Configuration File
+
+Traccar's main configuration file lives at `/opt/traccar/conf/traccar.xml`. The default file shipped with the installer uses the embedded H2 database, which is suitable for evaluation only:
+
+```xml
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE properties SYSTEM 'http://java.sun.com/dtd/properties.dtd'>
+<properties>
+
+    <!-- Documentation: https://www.traccar.org/configuration-file/ -->
+
+    <entry key='database.driver'>org.h2.Driver</entry>
+    <entry key='database.url'>jdbc:h2:./data/database</entry>
+    <entry key='database.user'>sa</entry>
+    <entry key='database.password' />
+
+</properties>
+```
+
+For production deployments replace the H2 entries with a MySQL or PostgreSQL connection — see the [Database Setup](/deployment/database) guide for full details.
+
+After editing `traccar.xml`, restart the service for changes to take effect:
+
+```bash
+sudo systemctl restart traccar
+```
+
+## Log Files
+
+Traccar writes structured logs to `/opt/traccar/logs/tracker-server.log`. Use `tail` to follow live output:
+
+```bash
+tail -f /opt/traccar/logs/tracker-server.log
+```
+
+Logs are also forwarded to the system journal via `SyslogIdentifier=traccar`, so `journalctl` works too:
+
+```bash
+sudo journalctl -u traccar -f
+```
+
+## Firewall Rules
+
+Open port `8082` for the web interface and API, plus any device protocol ports you need. The example below uses `ufw`:
+
+```bash
+# Web interface and REST API
+sudo ufw allow 8082/tcp
+
+# Example device protocol ports — add only the ones your devices use
+sudo ufw allow 5055/tcp   # OsmAnd / GPS Logger
+sudo ufw allow 5023/tcp   # GT06 (Concox, JiMi, and compatible)
+sudo ufw allow 5027/tcp   # Teltonika
+sudo ufw allow 5001/tcp   # Xexun / Gps-gate
+sudo ufw allow 5013/tcp   # GlobalSat
+
+sudo ufw reload
+```
+
+<Note>
+Traccar listens on a different TCP or UDP port for each GPS protocol. Check the Traccar device list for the port assigned to the protocol your trackers use. The most common range is 5000–5500.
+</Note>
+
+## Reverse Proxy with nginx
+
+Placing nginx in front of Traccar lets you serve the web interface on port 80/443, add SSL termination, and handle multiple virtual hosts on a single server.
+
+Install nginx and create a site configuration:
+
+```bash
+sudo apt install nginx -y
+sudo nano /etc/nginx/sites-available/traccar
+```
+
+Paste the following, replacing `traccar.example.com` with your domain:
+
+```nginx
+server {
+    listen 80;
+    server_name traccar.example.com;
+
+    location / {
+        proxy_pass         http://localhost:8082;
+        proxy_http_version 1.1;
+
+        proxy_set_header   Host              $host;
+        proxy_set_header   X-Real-IP         $remote_addr;
+        proxy_set_header   X-Forwarded-For   $proxy_add_x_forwarded_for;
+        proxy_set_header   X-Forwarded-Proto $scheme;
+
+        # Required for WebSocket (live map updates)
+        proxy_set_header   Upgrade           $http_upgrade;
+        proxy_set_header   Connection        "upgrade";
+
+        proxy_read_timeout 3600s;
+        proxy_send_timeout 3600s;
+    }
+}
+```
+
+Enable the site and reload nginx:
+
+```bash
+sudo ln -s /etc/nginx/sites-available/traccar /etc/nginx/sites-enabled/
+sudo nginx -t
+sudo systemctl reload nginx
+```
+
+## SSL with Let's Encrypt
+
+With nginx handling the reverse proxy, use Certbot to obtain a free TLS certificate from Let's Encrypt:
+
+```bash
+sudo apt install certbot python3-certbot-nginx -y
+sudo certbot --nginx -d traccar.example.com
+```
+
+Certbot automatically edits your nginx configuration to add the `listen 443 ssl` block and schedules certificate renewal via a systemd timer. After this step, all traffic to `traccar.example.com` is served over HTTPS.
+
+## Upgrading
+
+<Steps>
+  <Step title="Stop the service">
+    ```bash
+    sudo systemctl stop traccar
+    ```
+  </Step>
+  <Step title="Back up your configuration">
+    ```bash
+    sudo cp /opt/traccar/conf/traccar.xml ~/traccar.xml.bak
+    ```
+  </Step>
+  <Step title="Run the new installer">
+    Download the new release ZIP and run the self-extracting installer, which replaces the application files in `/opt/traccar` while preserving the `conf/` and `data/` directories:
+
+    ```bash
+    wget https://github.com/traccar/traccar/releases/latest/download/traccar-linux-64-latest.zip
+    unzip traccar-linux-64-latest.zip
+    sudo ./traccar.run
+    ```
+  </Step>
+  <Step title="Restart the service">
+    ```bash
+    sudo systemctl start traccar
+    ```
+
+    Liquibase will automatically apply any schema migrations required by the new version on first startup.
+  </Step>
+</Steps>
+
+## Cloud Provider User-Data (cloud-init)
+
+For automated provisioning on AWS, GCP, Azure, DigitalOcean, or any cloud that supports cloud-init, the Traccar repository ships a `setup/cloud-init.yaml` template. Pass it as the **user-data** script when launching a new instance. It installs `unzip` and `mysql-server`, writes a starter `traccar.xml`, downloads the latest release, runs the installer, and starts the service — fully hands-free. Review and customise the database password and JDBC URL in the template before use.
+
+```yaml
+#cloud-config
+
+write_files:
+  - content: |
+      <?xml version="1.0" encoding="UTF-8"?>
+      <!DOCTYPE properties SYSTEM 'http://java.sun.com/dtd/properties.dtd'>
+      <properties>
+        <entry key='database.driver'>com.mysql.jdbc.Driver</entry>
+        <entry key='database.url'>jdbc:mysql://localhost/traccar?zeroDateTimeBehavior=round&amp;serverTimezone=UTC&amp;allowPublicKeyRetrieval=true&amp;useSSL=false&amp;allowMultiQueries=true&amp;autoReconnect=true&amp;useUnicode=yes&amp;characterEncoding=UTF-8&amp;sessionVariables=sql_mode=''</entry>
+        <entry key='database.user'>root</entry>
+        <entry key='database.password'>root</entry>
+      </properties>
+    path: /root/traccar.xml
+
+package_update: true
+packages:
+  - unzip
+  - mysql-server
+
+runcmd:
+  - mysql -u root --execute="ALTER USER 'root'@'localhost' IDENTIFIED WITH mysql_native_password BY 'root'; GRANT ALL ON *.* TO 'root'@'localhost' WITH GRANT OPTION; FLUSH PRIVILEGES; CREATE DATABASE traccar;"
+  - wget https://www.traccar.org/download/traccar-linux-64-latest.zip
+  - unzip traccar-linux-*.zip && ./traccar.run
+  - cp /root/traccar.xml /opt/traccar/conf/
+  - service traccar start
+```
+
+<Warning>
+The cloud-init template uses `root` as both the MySQL user and password. Change these credentials to strong, unique values before deploying to any internet-facing server.
+</Warning>

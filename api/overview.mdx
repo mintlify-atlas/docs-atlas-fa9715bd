@@ -1,0 +1,167 @@
+---
+title: "Traccar REST API Overview and Getting Started"
+sidebarTitle: "Overview"
+description: "Traccar exposes a full REST API at /api. JSON responses, HTTP Basic Auth or token-based auth. Version 6.x endpoint reference with all resources."
+---
+
+The Traccar REST API provides programmatic access to all server functionality — devices, positions, geofences, reports, commands, users, and more. Every endpoint returns JSON and is versioned together with the Traccar server, so the API version always matches the running server release.
+
+## Base URL
+
+All API endpoints are rooted at:
+
+```
+http(s)://{host}:{port}/api
+```
+
+The default port is **8082**. On installations behind a reverse proxy (nginx, Apache) the port is typically `80` or `443` and can be omitted. You can test against one of the public demo servers listed in the [Demo Servers](#demo-servers) section below.
+
+## API Version
+
+The current API version is **6.14.5**, matching the Traccar server release. The version is embedded in the OpenAPI specification served at `/api/swagger.json` and changes in lock-step with each Traccar release.
+
+## Authentication
+
+Traccar supports three authentication methods. All three can be used interchangeably depending on your use case.
+
+| Method | Best For |
+|---|---|
+| HTTP Basic Auth | Quick scripts and testing |
+| API Token (Bearer) | Long-running integrations and third-party apps |
+| Session Cookie | Browser-based web applications |
+
+See the [Authentication guide](/api/authentication) for full details, including token creation, TOTP two-factor auth, and OpenID Connect.
+
+## Content Types
+
+| Direction | Content-Type |
+|---|---|
+| Request bodies (most endpoints) | `application/json` |
+| Session login (`POST /api/session`) | `application/x-www-form-urlencoded` |
+| Responses | `application/json` |
+
+<Note>
+  The session login endpoint intentionally uses form-encoded parameters rather than JSON so that it mirrors a standard HTML login form.
+</Note>
+
+## API Resources
+
+The table below lists every tagged resource group in the Traccar API, its description, and the base path. All paths are relative to the [Base URL](#base-url).
+
+| Resource | Description | Base Path |
+|---|---|---|
+| Session | User session management | `/api/session` |
+| Devices | Device management | `/api/devices` |
+| Positions | Retrieving raw location data | `/api/positions` |
+| Groups | Device group management | `/api/groups` |
+| Share | Share devices and groups | `/api/share` |
+| Users | User management | `/api/users` |
+| Permissions | User permissions and object linking | `/api/permissions` |
+| Events | Event log retrieval | `/api/events` |
+| Reports | Fleet report generation | `/api/reports` |
+| Notifications | Alert subscription management | `/api/notifications` |
+| Geofences | Geofence boundary management | `/api/geofences` |
+| Commands | Remote device command management | `/api/commands` |
+| Attributes | Computed attributes management | `/api/attributes` |
+| Drivers | Driver management | `/api/drivers` |
+| Maintenance | Maintenance schedule management | `/api/maintenance` |
+| Calendars | Schedule calendar management | `/api/calendars` |
+| Statistics | Server statistics | `/api/statistics` |
+| Server | Server configuration | `/api/server` |
+| Audit | Audit log access (admin only) | `/api/audit` |
+| Health | Server health check | `/api/health` |
+| Orders | Order management | `/api/orders` |
+| Stream | Live video streaming | `/api/stream` |
+| Password | Password reset flow | `/api/password` |
+
+## HTTP Methods
+
+Traccar uses the four standard REST verbs. PATCH is not used anywhere in the API.
+
+| Method | Meaning |
+|---|---|
+| `GET` | Read a resource or list of resources |
+| `POST` | Create a new resource or trigger an action |
+| `PUT` | Replace an existing resource (full update) |
+| `DELETE` | Remove a resource |
+
+## Standard CRUD Pattern
+
+Most resources follow a consistent, ID-based URL pattern:
+
+| Operation | Method | Path |
+|---|---|---|
+| List all | `GET` | `/api/{resource}` |
+| Create | `POST` | `/api/{resource}` |
+| Fetch one | `GET` | `/api/{resource}/{id}` |
+| Update | `PUT` | `/api/{resource}/{id}` |
+| Delete | `DELETE` | `/api/{resource}/{id}` |
+
+For example, to manage devices:
+
+```bash
+# List your devices
+GET /api/devices
+
+# Create a device
+POST /api/devices
+
+# Update device 42
+PUT /api/devices/42
+
+# Delete device 42
+DELETE /api/devices/42
+```
+
+Many list endpoints also accept query parameters such as `all`, `userId`, `groupId`, `deviceId`, `limit`, `offset`, and `keyword` for filtering and pagination.
+
+## Error Responses
+
+Traccar uses standard HTTP status codes for all error conditions.
+
+| Code | Meaning |
+|---|---|
+| `400` | Bad Request — validation error or missing required parameter |
+| `401` | Unauthorized — missing or invalid credentials |
+| `403` | Forbidden — authenticated but not permitted to access the resource |
+| `404` | Not Found — resource does not exist or you lack access |
+| `500` | Internal Server Error — unexpected server-side failure |
+
+Error responses return an empty body (`{}`). Use the HTTP status code to determine the failure category.
+
+## Demo Servers
+
+Traccar maintains four public demo servers you can use for development and testing without installing your own instance.
+
+<CardGroup cols={2}>
+  <Card title="Demo Server 1" icon="server" href="https://demo.traccar.org/api">
+    demo.traccar.org/api
+  </Card>
+  <Card title="Demo Server 2" icon="server" href="https://demo2.traccar.org/api">
+    demo2.traccar.org/api
+  </Card>
+  <Card title="Demo Server 3" icon="server" href="https://demo3.traccar.org/api">
+    demo3.traccar.org/api
+  </Card>
+  <Card title="Demo Server 4" icon="server" href="https://demo4.traccar.org/api">
+    demo4.traccar.org/api
+  </Card>
+</CardGroup>
+
+## Quick Start
+
+Try these two commands to verify your server is reachable and your credentials are correct:
+
+```bash
+# Check server health (no authentication required)
+curl http://localhost:8082/api/health
+
+# Fetch the currently authenticated user's session info
+curl -u admin:password http://localhost:8082/api/session
+```
+
+A healthy server returns `OK` (plain text) from the health endpoint. A successful session request returns a JSON `User` object with your account details.
+
+<Note>
+  For the full interactive API reference, including request/response schemas and a live "Try it" console, visit the official Traccar API documentation at [https://www.traccar.org/traccar-api/](https://www.traccar.org/traccar-api/).
+</Note>

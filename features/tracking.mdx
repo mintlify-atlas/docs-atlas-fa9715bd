@@ -1,0 +1,248 @@
+---
+title: "Real-Time GPS Tracking and Position Data"
+sidebarTitle: "Live Tracking"
+description: "Understand how Traccar receives, processes, and stores GPS positions. Covers position fields, telemetry attributes, live updates, and data forwarding."
+---
+
+Traccar processes incoming GPS data from devices and stores each fix as a `Position` record. Positions contain coordinates, speed, course, altitude, and a rich set of telemetry attributes parsed from the device protocol. Every position is associated with a device and carries three timestamps that let you distinguish when the fix was taken, when the device reported it, and when the server received it.
+
+## Position Fields
+
+The core fields of the `Position` model (`Position.java`) are:
+
+| Field | Type | Description |
+|---|---|---|
+| `id` | long | Auto-assigned unique identifier |
+| `deviceId` | long | ID of the reporting device |
+| `protocol` | string | Name of the protocol used to receive the data |
+| `serverTime` | date | When the Traccar server received the message |
+| `deviceTime` | date | Timestamp reported by the device firmware |
+| `fixTime` | date | When the GPS fix was acquired |
+| `valid` | boolean | Whether the fix is considered accurate by the device |
+| `latitude` | double | Latitude in decimal degrees (−90 to 90) |
+| `longitude` | double | Longitude in decimal degrees (−180 to 180) |
+| `altitude` | double | Altitude in meters above sea level |
+| `speed` | double | Speed in **knots** as received from the device |
+| `course` | double | Heading in degrees (0–360, clockwise from north) |
+| `accuracy` | double | Estimated accuracy radius in meters |
+| `address` | string | Reverse-geocoded street address (if enabled) |
+| `network` | object | Cell tower and Wi-Fi network data used for geolocation |
+| `geofenceIds` | array | IDs of geofences the device is currently inside |
+
+<Note>
+Speed stored in the `Position` record is in **knots** as parsed from the device protocol. The web interface converts this to km/h or mph based on user preferences.
+</Note>
+
+## Position Attributes
+
+Beyond the core fields, each position carries a dynamic attributes map populated by the protocol decoder. The following `KEY_*` constants are defined in `Position.java`:
+
+### GPS & Signal
+
+| Attribute Key | Type | Description |
+|---|---|---|
+| `sat` | integer | Number of satellites in use |
+| `satVisible` | integer | Number of satellites visible |
+| `hdop` | double | Horizontal dilution of precision |
+| `vdop` | double | Vertical dilution of precision |
+| `pdop` | double | Position dilution of precision |
+| `rssi` | double | Cellular signal strength (dBm) |
+| `gps` | double | GPS signal strength |
+| `roaming` | boolean | Whether the device SIM is roaming |
+| `approximate` | boolean | Position was estimated, not from GPS |
+| `archive` | boolean | Position was stored in device memory and sent later |
+
+### Vehicle & Engine
+
+| Attribute Key | Type | Description |
+|---|---|---|
+| `ignition` | boolean | Ignition state |
+| `motion` | boolean | Motion state (moving vs. stopped) |
+| `odometer` | long | Odometer in meters |
+| `serviceOdometer` | long | Odometer since last service (meters) |
+| `tripOdometer` | long | Trip odometer in meters |
+| `hours` | long | Engine hours in milliseconds |
+| `rpm` | integer | Engine RPM |
+| `throttle` | double | Throttle position percentage |
+| `engineLoad` | double | Engine load percentage |
+| `coolantTemp` | double | Coolant temperature in Celsius |
+| `engineTemp` | double | Engine temperature in Celsius |
+| `vin` | string | Vehicle identification number |
+| `obdSpeed` | double | Speed from OBD-II in km/h |
+| `obdOdometer` | long | Odometer from OBD-II in meters |
+| `dtcs` | string | Diagnostic trouble codes (comma-separated) |
+| `drivingTime` | long | Cumulative driving time in milliseconds |
+
+### Power & Battery
+
+| Attribute Key | Type | Description |
+|---|---|---|
+| `power` | double | External (vehicle) power voltage in volts |
+| `battery` | double | Backup battery voltage in volts |
+| `batteryLevel` | integer | Battery state of charge as a percentage |
+| `charge` | boolean | Whether the device is currently charging |
+
+### Fuel
+
+| Attribute Key | Type | Description |
+|---|---|---|
+| `fuel` | double | Fuel level in liters |
+| `fuelUsed` | double | Fuel consumed in liters |
+| `fuelConsumption` | double | Fuel consumption rate in liters/hour |
+| `fuelLevel` | double | Fuel level as a percentage |
+
+### I/O & Sensors
+
+| Attribute Key | Type | Description |
+|---|---|---|
+| `input` | integer | Bitmask of digital input states |
+| `output` | integer | Bitmask of digital output states |
+| `in{N}` | boolean | Individual digital input N (e.g., `in1`, `in2`) |
+| `out{N}` | boolean | Individual digital output N (e.g., `out1`) |
+| `adc{N}` | double | Analog-to-digital converter channel N |
+| `temp{N}` | double | Temperature sensor channel N (Celsius) |
+| `io{N}` | double | Arbitrary I/O channel N |
+| `count{N}` | long | Pulse counter channel N |
+| `humidity` | double | Relative humidity percentage |
+| `deviceTemp` | double | Internal device temperature in Celsius |
+| `acceleration` | double | Acceleration (g-force) |
+| `gSensor` | string | G-sensor data (raw string) |
+| `axleWeight` | integer | Axle weight (kg) |
+
+### Navigation & Safety
+
+| Attribute Key | Type | Description |
+|---|---|---|
+| `distance` | double | Distance traveled since last position (meters) |
+| `totalDistance` | double | Cumulative total distance (meters) |
+| `speedLimit` | double | Posted speed limit at current location (knots) |
+| `blocked` | boolean | Vehicle is physically blocked/immobilized |
+| `armed` | boolean | Alarm system armed state |
+| `lock` | boolean | Door/lock state |
+| `door` | boolean | Door open state |
+| `bonnet` | boolean | Bonnet (hood) open state |
+
+### Driver & Communication
+
+| Attribute Key | Type | Description |
+|---|---|---|
+| `driverUniqueId` | string | RFID/iButton ID of the active driver |
+| `card` | string | Smart card identifier |
+| `iccid` | string | SIM card ICCID |
+| `phone` | string | Device phone number |
+| `ip` | string | Device IP address |
+| `operator` | string | Mobile network operator name |
+
+### Alarms
+
+The `alarm` attribute carries one or more comma-separated alarm type strings. Defined alarm values include:
+
+| Alarm Value | Description |
+|---|---|
+| `general` | Generic alarm |
+| `sos` | SOS / panic button |
+| `vibration` | Vibration detected |
+| `movement` | Unexpected movement |
+| `overspeed` | Speed threshold exceeded |
+| `lowspeed` | Speed below threshold |
+| `fallDown` | Fall detection |
+| `lowPower` | Low external power |
+| `lowBattery` | Low battery |
+| `fault` | Device fault |
+| `powerOff` | External power disconnected |
+| `powerOn` | External power restored |
+| `powerCut` | Power wire cut |
+| `powerRestored` | Power wire reconnected |
+| `door` | Door tamper alarm |
+| `lock` | Lock alarm |
+| `unlock` | Unlock alarm |
+| `geofenceEnter` | Device-reported geofence entry |
+| `geofenceExit` | Device-reported geofence exit |
+| `gpsAntennaCut` | GPS antenna cut |
+| `accident` | Accident / collision detected |
+| `tow` | Towing detected |
+| `idle` | Extended idle time |
+| `highRpm` | High RPM alarm |
+| `hardAcceleration` | Harsh acceleration |
+| `hardBraking` | Harsh braking |
+| `hardCornering` | Harsh cornering |
+| `laneChange` | Unintended lane change |
+| `fatigueDriving` | Driver fatigue detected |
+| `jamming` | GPS/GSM jamming detected |
+| `temperature` | Temperature threshold exceeded |
+| `parking` | Parking violation |
+| `footBrake` | Foot brake alarm |
+| `fuelLeak` | Fuel leak detected |
+| `tampering` | Device tampering |
+| `removing` | Device removal detected |
+
+### Media & Commands
+
+| Attribute Key | Type | Description |
+|---|---|---|
+| `image` | string | Attached image identifier |
+| `video` | string | Attached video identifier |
+| `audio` | string | Attached audio identifier |
+| `result` | string | Response text from a sent command |
+| `command` | string | Last command sent to the device |
+| `event` | string | Raw event code from the device |
+| `status` | string | Raw status word from the device |
+| `raw` | string | Original raw message bytes (for debugging) |
+| `index` | integer | Message sequence number |
+| `type` | string | Protocol-specific message type |
+| `versionFw` | string | Firmware version string |
+| `versionHw` | string | Hardware version string |
+
+## Live Position Updates
+
+The Traccar web interface uses a persistent connection (WebSocket or server-sent events depending on the client) to receive new positions in real time. Each time a device reports a new position, connected clients receive a push notification containing the updated `Position` object.
+
+For API-based integrations, poll for the current position with:
+
+```bash
+GET /api/positions?deviceId={id}
+```
+
+This returns the **latest** known position for the device. To stream historical positions over a time range, add `from` and `to` parameters (see examples below).
+
+## Valid vs. Invalid Fixes
+
+The `valid` boolean reflects whether the device's GPS receiver reported a valid fix at the time of the reading. Devices may send positions with `valid: false` when they have no satellite signal but still want to report I/O state or alarms.
+
+By default, Traccar stores all positions including invalid ones. To suppress invalid position storage, set `database.saveInvalid=false` in `traccar.xml`. To also save empty (no-attribute) positions, set `database.saveEmpty=true`.
+
+## Data Forwarding
+
+Traccar can forward every incoming position to an external HTTP endpoint in real time. Configure the following keys in `traccar.xml`:
+
+```xml
+<entry key='forward.url'>https://example.com/webhook</entry>
+<entry key='forward.header'>Authorization: Bearer token123</entry>
+<entry key='forward.json'>true</entry>
+```
+
+When `forward.json` is `true`, the full position JSON is posted to the URL. When `false`, fields are sent as URL-encoded form parameters.
+
+## API Examples
+
+<Tabs>
+  <Tab title="Current Position">
+    ```bash
+    # Get current position for a device
+    curl -u admin:password 'http://localhost:8082/api/positions?deviceId=1'
+    ```
+  </Tab>
+  <Tab title="Historical Positions">
+    ```bash
+    # Get historical positions over a time range
+    curl -u admin:password \
+      'http://localhost:8082/api/positions?deviceId=1&from=2024-01-01T00:00:00Z&to=2024-01-02T00:00:00Z'
+    ```
+  </Tab>
+  <Tab title="Multiple Devices">
+    ```bash
+    # Get latest positions for all accessible devices
+    curl -u admin:password 'http://localhost:8082/api/positions'
+    ```
+  </Tab>
+</Tabs>

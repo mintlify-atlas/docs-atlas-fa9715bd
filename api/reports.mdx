@@ -1,0 +1,316 @@
+---
+title: "Reports API — Generate Fleet Analytics"
+sidebarTitle: "Reports"
+description: "Generate route, trip, stop, summary, and event reports via the REST API. Returns JSON by default; supports XLSX export via Accept header or mail delivery."
+---
+
+The Reports API generates fleet analytics over configurable time ranges. Every report endpoint accepts one or more `deviceId` or `groupId` parameters and requires `from` and `to` to define the time window. Reports can be returned as JSON for programmatic processing or exported to Excel (XLSX) by appending `/{type}` to the path where `type` is `xlsx` (download) or `mail` (email delivery). Access requires that the user has not been restricted from reports via `disableReports`.
+
+## Common Parameters
+
+All report endpoints accept the following query parameters unless noted otherwise.
+
+<ParamField query="deviceId" type="integer">
+  Internal device identifier. Repeatable — pass multiple values to include several devices: `deviceId=1&deviceId=2`.
+</ParamField>
+
+<ParamField query="groupId" type="integer">
+  Group identifier. All devices in the group are included. Repeatable.
+</ParamField>
+
+<ParamField query="from" type="string (ISO 8601)" required>
+  Start of the report time range. Example: `2024-01-01T00:00:00Z`.
+</ParamField>
+
+<ParamField query="to" type="string (ISO 8601)" required>
+  End of the report time range. Example: `2024-01-31T23:59:59Z`.
+</ParamField>
+
+## Output Formats
+
+Every JSON report endpoint has a corresponding XLSX variant at `/{type}` where `type` is `xlsx` or `mail`.
+
+| Path suffix | Behaviour |
+|-------------|-----------|
+| _(none)_ | JSON response |
+| `/xlsx` | Download Excel spreadsheet |
+| `/mail` | Email the report to the current user asynchronously |
+
+```bash
+# JSON
+curl -u admin:password \
+  'http://localhost:8082/api/reports/trips?deviceId=1&from=2024-01-01T00:00:00Z&to=2024-01-31T23:59:59Z'
+
+# XLSX download
+curl -u admin:password \
+  'http://localhost:8082/api/reports/trips/xlsx?deviceId=1&from=2024-01-01T00:00:00Z&to=2024-01-31T23:59:59Z' \
+  -o trips.xlsx
+
+# Email the report
+curl -u admin:password \
+  'http://localhost:8082/api/reports/trips/mail?deviceId=1&from=2024-01-01T00:00:00Z&to=2024-01-31T23:59:59Z'
+```
+
+---
+
+## Endpoints
+
+### GET /api/reports/route
+
+Returns the raw position trace for the specified devices and time window. The response is an array of Position objects identical in structure to those returned by `GET /api/positions`.
+
+```bash
+curl -u admin:password \
+  'http://localhost:8082/api/reports/route?deviceId=1&from=2024-01-01T00:00:00Z&to=2024-01-01T23:59:59Z'
+```
+
+<Expandable title="Response fields">
+  <ResponseField name="id" type="integer">Unique position record identifier.</ResponseField>
+  <ResponseField name="deviceId" type="integer">Device that reported the position.</ResponseField>
+  <ResponseField name="fixTime" type="string (ISO 8601)">GPS fix timestamp.</ResponseField>
+  <ResponseField name="valid" type="boolean">Whether the GPS fix was valid.</ResponseField>
+  <ResponseField name="latitude" type="number">Latitude in decimal degrees.</ResponseField>
+  <ResponseField name="longitude" type="number">Longitude in decimal degrees.</ResponseField>
+  <ResponseField name="altitude" type="number">Altitude in meters.</ResponseField>
+  <ResponseField name="speed" type="number">Speed in knots.</ResponseField>
+  <ResponseField name="course" type="number">Heading in degrees (0–360).</ResponseField>
+  <ResponseField name="address" type="string">Reverse-geocoded address if available.</ResponseField>
+  <ResponseField name="attributes" type="object">Device telemetry attributes.</ResponseField>
+</Expandable>
+
+Excel variant: `GET /api/reports/route/xlsx`
+
+---
+
+### GET /api/reports/trips
+
+Returns detected trip segments. Traccar uses motion detection and ignition state (when available) to identify the start and end of each trip.
+
+```bash
+curl -u admin:password \
+  'http://localhost:8082/api/reports/trips?deviceId=1&from=2024-01-01T00:00:00Z&to=2024-01-31T23:59:59Z'
+```
+
+<Expandable title="Response fields (TripReportItem)">
+  <ResponseField name="deviceId" type="integer">Device identifier.</ResponseField>
+  <ResponseField name="deviceName" type="string">Human-readable device name.</ResponseField>
+  <ResponseField name="startTime" type="string (ISO 8601)">Trip start timestamp.</ResponseField>
+  <ResponseField name="endTime" type="string (ISO 8601)">Trip end timestamp.</ResponseField>
+  <ResponseField name="startLat" type="number">Starting latitude in decimal degrees.</ResponseField>
+  <ResponseField name="startLon" type="number">Starting longitude in decimal degrees.</ResponseField>
+  <ResponseField name="endLat" type="number">Ending latitude in decimal degrees.</ResponseField>
+  <ResponseField name="endLon" type="number">Ending longitude in decimal degrees.</ResponseField>
+  <ResponseField name="startAddress" type="string">Reverse-geocoded address at trip start.</ResponseField>
+  <ResponseField name="endAddress" type="string">Reverse-geocoded address at trip end.</ResponseField>
+  <ResponseField name="distance" type="number">Trip distance in meters.</ResponseField>
+  <ResponseField name="averageSpeed" type="number">Average speed in knots.</ResponseField>
+  <ResponseField name="maxSpeed" type="number">Peak speed in knots.</ResponseField>
+  <ResponseField name="duration" type="integer">Trip duration in milliseconds.</ResponseField>
+  <ResponseField name="spentFuel" type="number">Estimated fuel consumed in liters.</ResponseField>
+  <ResponseField name="startOdometer" type="number">Odometer at trip start in meters.</ResponseField>
+  <ResponseField name="endOdometer" type="number">Odometer at trip end in meters.</ResponseField>
+  <ResponseField name="driverUniqueId" type="string">Unique ID of the assigned driver, if any.</ResponseField>
+  <ResponseField name="driverName" type="string">Full name of the assigned driver, if any.</ResponseField>
+  <ResponseField name="startPositionId" type="integer">Position ID of the trip start record.</ResponseField>
+  <ResponseField name="endPositionId" type="integer">Position ID of the trip end record.</ResponseField>
+</Expandable>
+
+**Example response:**
+
+```json
+[
+  {
+    "deviceId": 1,
+    "deviceName": "Fleet Vehicle 01",
+    "startTime": "2024-01-01T08:02:15Z",
+    "endTime": "2024-01-01T09:47:30Z",
+    "startLat": 37.7749,
+    "startLon": -122.4194,
+    "endLat": 37.3382,
+    "endLon": -121.8863,
+    "startAddress": "Market St, San Francisco, CA",
+    "endAddress": "1st St, San Jose, CA",
+    "distance": 80320.5,
+    "averageSpeed": 28.4,
+    "maxSpeed": 58.2,
+    "duration": 6315000,
+    "spentFuel": 6.2,
+    "driverUniqueId": "DRV001",
+    "driverName": "Jane Smith"
+  }
+]
+```
+
+Excel variant: `GET /api/reports/trips/xlsx`
+
+---
+
+### GET /api/reports/stops
+
+Returns stationary periods where a device remained stopped for longer than the configured minimum stop duration.
+
+```bash
+curl -u admin:password \
+  'http://localhost:8082/api/reports/stops?deviceId=1&from=2024-01-01T00:00:00Z&to=2024-01-31T23:59:59Z'
+```
+
+<Expandable title="Response fields (StopReportItem)">
+  <ResponseField name="deviceId" type="integer">Device identifier.</ResponseField>
+  <ResponseField name="deviceName" type="string">Human-readable device name.</ResponseField>
+  <ResponseField name="startTime" type="string (ISO 8601)">When the stop began.</ResponseField>
+  <ResponseField name="endTime" type="string (ISO 8601)">When the stop ended.</ResponseField>
+  <ResponseField name="lat" type="number">Stop latitude in decimal degrees.</ResponseField>
+  <ResponseField name="lon" type="number">Stop longitude in decimal degrees.</ResponseField>
+  <ResponseField name="address" type="string">Reverse-geocoded address for the stop location.</ResponseField>
+  <ResponseField name="duration" type="integer">Stop duration in milliseconds.</ResponseField>
+  <ResponseField name="spentFuel" type="number">Fuel consumed during the stop in liters.</ResponseField>
+  <ResponseField name="engineHours" type="integer">Engine hours accumulated during the stop in milliseconds.</ResponseField>
+</Expandable>
+
+Excel variant: `GET /api/reports/stops/xlsx`
+
+---
+
+### GET /api/reports/summary
+
+Returns aggregated metrics per device for the selected time window. Pass `daily=true` to break the summary into daily rows.
+
+<ParamField query="daily" type="boolean">
+  When `true`, returns one summary row per device per calendar day rather than a single aggregate row for the whole period.
+</ParamField>
+
+```bash
+# Monthly summary for all devices in group 2
+curl -u admin:password \
+  'http://localhost:8082/api/reports/summary?groupId=2&from=2024-01-01T00:00:00Z&to=2024-01-31T23:59:59Z'
+
+# Daily breakdown for device 1
+curl -u admin:password \
+  'http://localhost:8082/api/reports/summary?deviceId=1&from=2024-01-01T00:00:00Z&to=2024-01-31T23:59:59Z&daily=true'
+```
+
+<Expandable title="Response fields (SummaryReportItem)">
+  <ResponseField name="deviceId" type="integer">Device identifier.</ResponseField>
+  <ResponseField name="deviceName" type="string">Human-readable device name.</ResponseField>
+  <ResponseField name="startTime" type="string (ISO 8601)">Start of the summary period.</ResponseField>
+  <ResponseField name="endTime" type="string (ISO 8601)">End of the summary period.</ResponseField>
+  <ResponseField name="distance" type="number">Total distance in meters.</ResponseField>
+  <ResponseField name="averageSpeed" type="number">Average speed in knots.</ResponseField>
+  <ResponseField name="maxSpeed" type="number">Peak speed in knots.</ResponseField>
+  <ResponseField name="spentFuel" type="number">Estimated total fuel consumption in liters.</ResponseField>
+  <ResponseField name="engineHours" type="integer">Calculated engine hours (endHours − startHours) in milliseconds.</ResponseField>
+  <ResponseField name="startOdometer" type="number">Odometer at the start of the period in meters.</ResponseField>
+  <ResponseField name="endOdometer" type="number">Odometer at the end of the period in meters.</ResponseField>
+</Expandable>
+
+Excel variant: `GET /api/reports/summary/xlsx`
+
+---
+
+### GET /api/reports/events
+
+Returns the event log for the selected devices and time window.
+
+<ParamField query="type" type="string">
+  Filter by event type. Repeatable. Example: `type=geofenceEnter&type=alarm`. If omitted, all event types are returned.
+</ParamField>
+
+<ParamField query="alarm" type="string">
+  Filter events by alarm sub-type (only applies to events of type `alarm`). Repeatable.
+</ParamField>
+
+```bash
+# All events for device 1 in January
+curl -u admin:password \
+  'http://localhost:8082/api/reports/events?deviceId=1&from=2024-01-01T00:00:00Z&to=2024-01-31T23:59:59Z'
+
+# Only geofence and overspeed events
+curl -u admin:password \
+  'http://localhost:8082/api/reports/events?deviceId=1&from=2024-01-01T00:00:00Z&to=2024-01-31T23:59:59Z&type=geofenceEnter&type=geofenceExit&type=deviceOverspeed'
+```
+
+<Expandable title="Response fields (Event)">
+  <ResponseField name="id" type="integer">Unique event identifier.</ResponseField>
+  <ResponseField name="type" type="string">Event type name (e.g., `geofenceEnter`, `alarm`).</ResponseField>
+  <ResponseField name="eventTime" type="string (ISO 8601)">When the event occurred.</ResponseField>
+  <ResponseField name="deviceId" type="integer">Device that generated the event.</ResponseField>
+  <ResponseField name="positionId" type="integer">Position record linked to the event.</ResponseField>
+  <ResponseField name="geofenceId" type="integer">Geofence referenced by the event, if applicable.</ResponseField>
+  <ResponseField name="maintenanceId" type="integer">Maintenance record tied to the event, if applicable.</ResponseField>
+  <ResponseField name="attributes" type="object">Additional event-specific attributes.</ResponseField>
+</Expandable>
+
+Excel variant: `GET /api/reports/events/xlsx`
+
+---
+
+### GET /api/reports/geofences
+
+Returns intervals during which each device was inside specific geofences.
+
+<ParamField query="geofenceId" type="integer">
+  Filter results to specific geofences. Repeatable.
+</ParamField>
+
+```bash
+curl -u admin:password \
+  'http://localhost:8082/api/reports/geofences?deviceId=1&geofenceId=1&from=2024-01-01T00:00:00Z&to=2024-01-31T23:59:59Z'
+```
+
+<Expandable title="Response fields (ReportGeofences)">
+  <ResponseField name="deviceId" type="integer">Device identifier.</ResponseField>
+  <ResponseField name="deviceName" type="string">Human-readable device name.</ResponseField>
+  <ResponseField name="geofenceId" type="integer">Geofence identifier for the interval.</ResponseField>
+  <ResponseField name="startTime" type="string (ISO 8601)">When the device entered the geofence.</ResponseField>
+  <ResponseField name="endTime" type="string (ISO 8601)">When the device exited the geofence.</ResponseField>
+</Expandable>
+
+---
+
+### GET /api/reports/combined
+
+Returns a combined report merging route positions and events for each device. Useful for building timeline visualisations.
+
+```bash
+curl -u admin:password \
+  'http://localhost:8082/api/reports/combined?deviceId=1&from=2024-01-01T00:00:00Z&to=2024-01-01T23:59:59Z'
+```
+
+<Expandable title="Response fields (CombinedReportItem)">
+  <ResponseField name="deviceId" type="integer">Device identifier for this report item.</ResponseField>
+  <ResponseField name="route" type="array">
+    Simplified route as an array of `[longitude, latitude]` coordinate pairs.
+  </ResponseField>
+  <ResponseField name="events" type="array">
+    Array of Event objects that occurred during the period.
+  </ResponseField>
+  <ResponseField name="positions" type="array">
+    Array of Position objects for the period.
+  </ResponseField>
+</Expandable>
+
+---
+
+### GET /api/reports/devices/xlsx
+
+Export a summary of all accessible devices (name, uniqueId, status) as an Excel spreadsheet. No time range is required.
+
+```bash
+curl -u admin:password \
+  'http://localhost:8082/api/reports/devices/xlsx' \
+  -o devices.xlsx
+
+# Email the report instead
+curl -u admin:password \
+  'http://localhost:8082/api/reports/devices/mail'
+```
+
+---
+
+## Speed Units
+
+<Note>
+  All speed values in report responses are in **knots**. Conversion factors:
+  - 1 knot = 1.852 km/h
+  - 1 knot = 1.15078 mph
+</Note>

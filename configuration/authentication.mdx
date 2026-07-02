@@ -1,0 +1,290 @@
+---
+title: "Authentication in Traccar: LDAP, OpenID, and Local"
+sidebarTitle: "Authentication"
+description: "Configure local user authentication, LDAP directory integration, and OpenID Connect (OIDC) single sign-on for Traccar deployments."
+---
+
+Traccar supports three authentication modes — local user accounts stored in the database, LDAP directory authentication, and OpenID Connect (OIDC) for single sign-on. For API access, Traccar accepts HTTP Basic Auth, session cookies, and bearer tokens. All three modes can be partially combined: for example, LDAP can be used alongside local accounts, or OIDC can be made mandatory while still allowing local admin access.
+
+<Warning>
+  Always use HTTPS in production to protect credentials in transit. Configure a reverse proxy (nginx, Caddy) with a valid TLS certificate in front of Traccar. Sending passwords over plain HTTP exposes them to network interception.
+</Warning>
+
+---
+
+## Local authentication
+
+Local authentication is the default mode. User accounts are stored in the Traccar database with bcrypt-hashed passwords.
+
+<Steps>
+  <Step title="First-run admin account">
+    On the first request after installation, Traccar detects that no users exist in the database and allows creating an administrator account through the web interface. Navigate to `http://your-server:8082` and complete the setup form.
+  </Step>
+  <Step title="Managing users">
+    Subsequent users can be created by an administrator through **Settings → Users** in the web interface, or via the REST API:
+    ```bash
+    curl -X POST https://your-traccar-server/api/users \
+      -H 'Content-Type: application/json' \
+      -d '{"name":"Alice","email":"alice@example.com","password":"s3cr3t"}'
+    ```
+  </Step>
+  <Step title="Password security">
+    Passwords are hashed using bcrypt before storage. Traccar never stores plaintext passwords. Password resets are handled via email (requires SMTP configuration — see [Notifications](/configuration/notifications)).
+  </Step>
+</Steps>
+
+### Session management
+
+| Method | How it works |
+|--------|-------------|
+| **Web UI session (cookie)** | `POST /api/session` with `email` and `password` form fields sets an HTTP session cookie used by the browser for subsequent requests. |
+| **HTTP Basic Auth** | Pass `Authorization: Basic base64(email:password)` on every API request. No session is created. |
+| **Bearer token** | Exchange credentials for a long-lived token once, then use `Authorization: Bearer <token>` or `?token=<token>` query parameter. |
+
+### Token-based authentication
+
+Generate a token with an optional expiration:
+
+```bash
+# Get a token (valid for 7 days)
+curl -X POST 'https://your-traccar-server/api/session/token' \
+  -u 'admin@example.com:password' \
+  -H 'Content-Type: application/json' \
+  -d '{"expiration": "2025-12-31T23:59:59Z"}'
+```
+
+Use the returned token in subsequent requests:
+
+```bash
+curl 'https://your-traccar-server/api/devices' \
+  -H 'Authorization: Bearer eyJhbGc...'
+
+# Or as a query parameter
+curl 'https://your-traccar-server/api/devices?token=eyJhbGc...'
+```
+
+---
+
+## LDAP authentication
+
+Traccar can authenticate users against an LDAP directory (Active Directory, OpenLDAP, FreeIPA, etc.). When a user logs in, Traccar performs an LDAP bind to verify the password. If the LDAP bind succeeds and the user does not exist locally, Traccar creates a local user record populated from the LDAP attributes.
+
+### Configuration keys
+
+| Key | Type | Default | Description |
+|-----|------|---------|-------------|
+| `ldap.url` | string | — | LDAP server URL, e.g. `ldap://ldap.example.com:389` or `ldaps://ldap.example.com:636` for SSL. |
+| `ldap.user` | string | — | Bind DN used by Traccar to search for users (service account DN). |
+| `ldap.password` | string | — | Password for the service account bind DN. |
+| `ldap.force` | boolean | `false` | When `true`, only LDAP authentication is accepted. Local password authentication is disabled for all non-LDAP users. |
+| `ldap.base` | string | — | LDAP search base DN, e.g. `ou=users,dc=example,dc=com`. |
+| `ldap.idAttribute` | string | `uid` | LDAP attribute mapped to the Traccar login/username field. |
+| `ldap.nameAttribute` | string | `cn` | LDAP attribute mapped to the user's display name. |
+| `ldap.mailAttribute` | string | `mail` | LDAP attribute mapped to the user's email address. |
+| `ldap.searchFilter` | string | `({idAttribute}=:login)` | Custom LDAP search filter. The placeholder `:login` is replaced with the login entered by the user. |
+| `ldap.adminFilter` | string | — | Custom LDAP filter to identify administrator users. If matched, the Traccar user is granted administrator access. |
+| `ldap.adminGroup` | string | — | LDAP group DN whose members are granted Traccar administrator access. Used when `ldap.adminFilter` is not set. |
+
+### Example configuration
+
+```xml
+<!-- OpenLDAP example -->
+<entry key='ldap.url'>ldap://ldap.example.com:389</entry>
+<entry key='ldap.base'>dc=example,dc=com</entry>
+<entry key='ldap.user'>cn=traccar,dc=example,dc=com</entry>
+<entry key='ldap.password'>bind_password</entry>
+<entry key='ldap.idAttribute'>uid</entry>
+<entry key='ldap.nameAttribute'>cn</entry>
+<entry key='ldap.mailAttribute'>mail</entry>
+<entry key='ldap.searchFilter'>(objectClass=person)</entry>
+<entry key='ldap.adminGroup'>cn=traccar-admins,ou=groups,dc=example,dc=com</entry>
+```
+
+```xml
+<!-- Active Directory example -->
+<entry key='ldap.url'>ldap://dc.corp.example.com:389</entry>
+<entry key='ldap.base'>ou=Users,dc=corp,dc=example,dc=com</entry>
+<entry key='ldap.user'>CN=traccar-svc,OU=Service Accounts,DC=corp,DC=example,DC=com</entry>
+<entry key='ldap.password'>service_account_password</entry>
+<entry key='ldap.idAttribute'>sAMAccountName</entry>
+<entry key='ldap.nameAttribute'>displayName</entry>
+<entry key='ldap.mailAttribute'>mail</entry>
+<entry key='ldap.searchFilter'>(&amp;(objectClass=user)(sAMAccountName=:login))</entry>
+<entry key='ldap.adminGroup'>CN=Traccar-Admins,OU=Groups,DC=corp,DC=example,DC=com</entry>
+```
+
+<Note>
+  Use `&amp;` in the XML value when you need a literal `&` in the LDAP filter (e.g. for the `(&(...)(...))`  compound filter syntax).
+</Note>
+
+---
+
+## OpenID Connect (OIDC) / SSO
+
+Traccar supports OpenID Connect for single sign-on with identity providers such as Keycloak, Okta, Azure AD (Entra ID), Google, Auth0, and any other OIDC-compliant provider.
+
+The OIDC callback URL that you must register with your identity provider is:
+
+```
+https://your-traccar-server/api/session/openid/callback
+```
+
+### Configuration keys
+
+| Key | Type | Default | Description |
+|-----|------|---------|-------------|
+| `openid.clientId` | string | — | OAuth 2.0 / OIDC client ID assigned by your identity provider. **Required to enable SSO.** |
+| `openid.clientSecret` | string | — | OAuth 2.0 / OIDC client secret. **Required to enable SSO.** |
+| `openid.issuerUrl` | string | — | OIDC issuer (base) URL. Traccar uses this to auto-discover the authorization, token, and userinfo endpoints via `/.well-known/openid-configuration`. |
+| `openid.authUrl` | string | — | Authorization endpoint URL. Required only if `openid.issuerUrl` is not set. |
+| `openid.tokenUrl` | string | — | Token endpoint URL. Required only if `openid.issuerUrl` is not set. |
+| `openid.userInfoUrl` | string | — | UserInfo endpoint URL. Required only if `openid.issuerUrl` is not set. |
+| `openid.force` | boolean | `false` | When `true`, the Traccar login page is bypassed and all users are redirected to the OIDC provider. Local login is still available at `/api/session`. |
+| `openid.allowRegistration` | boolean | `false` | Automatically create a Traccar user account when an unknown user authenticates via OIDC, even if server-level self-registration is disabled. |
+| `openid.allowGroup` | string | — | OIDC groups claim value that a user must belong to in order to access Traccar. If unset, all authenticated OIDC users are allowed. |
+| `openid.adminGroup` | string | — | OIDC groups claim value that grants Traccar administrator access. |
+| `openid.groupsClaimName` | string | `groups` | Name of the OIDC token claim that contains group membership information. |
+| `openid.clients` | string | — | Comma-separated list of additional OAuth clients in `clientId:clientSecret:redirectUri` format (with `\|` for multiple redirect URIs per client). Used for the built-in OIDC provider if Traccar acts as an IdP. |
+
+### Keycloak example
+
+```xml
+<entry key='openid.clientId'>traccar</entry>
+<entry key='openid.clientSecret'>your-client-secret</entry>
+<entry key='openid.issuerUrl'>https://keycloak.example.com/realms/myrealm</entry>
+<entry key='openid.force'>true</entry>
+<entry key='openid.allowRegistration'>true</entry>
+<entry key='openid.adminGroup'>traccar-admins</entry>
+```
+
+### Azure AD (Entra ID) example
+
+```xml
+<entry key='openid.clientId'>xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx</entry>
+<entry key='openid.clientSecret'>your-client-secret</entry>
+<entry key='openid.issuerUrl'>https://login.microsoftonline.com/your-tenant-id/v2.0</entry>
+<entry key='openid.allowRegistration'>true</entry>
+<entry key='openid.groupsClaimName'>groups</entry>
+<entry key='openid.adminGroup'>xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx</entry>
+```
+
+### Okta example
+
+```xml
+<entry key='openid.clientId'>0oaxxxxxxxxxxxxxxxx</entry>
+<entry key='openid.clientSecret'>your-client-secret</entry>
+<entry key='openid.issuerUrl'>https://your-domain.okta.com</entry>
+<entry key='openid.force'>true</entry>
+<entry key='openid.allowRegistration'>true</entry>
+```
+
+---
+
+## API authentication
+
+Three authentication methods are available for programmatic API access:
+
+<Tabs>
+  <Tab title="HTTP Basic Auth">
+    Pass credentials as a Base64-encoded `email:password` string on every request. No session state is maintained server-side.
+
+    ```bash
+    curl -u 'admin@example.com:password' \
+      https://your-traccar-server/api/devices
+    ```
+
+    Or manually with the header:
+
+    ```bash
+    # echo -n 'admin@example.com:password' | base64
+    curl -H 'Authorization: Basic YWRtaW5AZXhhbXBsZS5jb206cGFzc3dvcmQ=' \
+      https://your-traccar-server/api/devices
+    ```
+  </Tab>
+  <Tab title="Bearer Token">
+    Exchange credentials once for a signed JWT token, then use the token for all subsequent requests. Tokens can have an expiration date.
+
+    **Step 1 — generate a token:**
+    ```bash
+    curl -X POST https://your-traccar-server/api/session/token \
+      -u 'admin@example.com:password'
+    ```
+
+    **Step 2 — use the token:**
+    ```bash
+    # Authorization header
+    curl -H 'Authorization: Bearer eyJhbGc...' \
+      https://your-traccar-server/api/devices
+
+    # Query parameter (useful for WebSocket or download links)
+    curl 'https://your-traccar-server/api/devices?token=eyJhbGc...'
+    ```
+  </Tab>
+  <Tab title="Session Cookie">
+    The web interface uses a server-side session. Authenticate once with a `POST` to `/api/session`, then include the returned cookie in subsequent requests.
+
+    ```bash
+    # Authenticate and save cookie
+    curl -c cookies.txt -X POST \
+      https://your-traccar-server/api/session \
+      -d 'email=admin@example.com&password=password'
+
+    # Use saved cookie
+    curl -b cookies.txt \
+      https://your-traccar-server/api/devices
+    ```
+  </Tab>
+</Tabs>
+
+### Service account token
+
+For automated systems, a static service account token can be configured in `traccar.xml`. A request bearing this token is treated as a virtual administrator:
+
+```xml
+<entry key='web.serviceAccountToken'>a-long-random-secret-string</entry>
+```
+
+```bash
+curl -H 'Authorization: Bearer a-long-random-secret-string' \
+  https://your-traccar-server/api/devices
+```
+
+<Warning>
+  The service account token grants full administrator access. Store it securely, rotate it regularly, and never commit it to version control.
+</Warning>
+
+---
+
+## Two-factor authentication (TOTP)
+
+Traccar supports time-based one-time passwords (TOTP) per RFC 6238, compatible with Google Authenticator, Authy, and any standard TOTP app.
+
+TOTP is managed at the server level via two server attributes:
+
+| Server attribute | Description |
+|-----------------|-------------|
+| `totpEnable` | Enable TOTP support on the server. Users can then opt in. |
+| `totpForce` | Require all new users to set up TOTP. |
+
+**User TOTP flow:**
+
+<Steps>
+  <Step title="Generate a TOTP secret">
+    ```bash
+    # Generate a TOTP key for the current user
+    POST /api/users/{id}/totp
+    ```
+    Returns a TOTP secret and a QR code URL that the user scans with their authenticator app.
+  </Step>
+  <Step title="Verify and activate">
+    The user confirms TOTP setup by submitting a valid code from their authenticator app.
+  </Step>
+  <Step title="Login with TOTP">
+    When TOTP is enabled for a user, `POST /api/session` requires an additional `code` field containing the 6-digit TOTP code:
+    ```bash
+    curl -X POST https://your-traccar-server/api/session \
+      -d 'email=user@example.com&password=password&code=123456'
+    ```
+    If the code is omitted and TOTP is required, the server returns an HTTP 401 with a specific error indicating that a code is required.
+  </Step>
+</Steps>

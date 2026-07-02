@@ -1,47 +1,156 @@
 ---
-title: "Quickstart"
-description: "Begin with a guide on the fastest path to a successful outcome"
+title: "Get Started with Traccar in 5 Minutes"
+sidebarTitle: "Quickstart"
+description: "Deploy Traccar with Docker Compose and connect your first GPS device to start receiving real-time positions in under 5 minutes."
 ---
 
-Describe how someone begins using your product. What is the first thing they need to do? Are there any prerequisites?
-
-A quickstart should take someone from zero to using your product. They'll get a quick win and a sense of what they can accomplish.
-
-## Prerequisites
-
-Before you begin, you must have:
-
-- Requirement one (for example, Node.js 18+, a free account, an API key)
-- Requirement two (for example, a compatible device, a compatible browser, a compatible operating system)
-
-## Get started
+This guide walks you through the fastest path to a running Traccar instance: spin up the server with Docker Compose, open the web interface, and verify the REST API is responding — all in under five minutes. By the end you will have a locally running Traccar server ready to accept device connections, a working admin account, and a confirmed API session you can build on.
 
 <Steps>
-  <Step title="Install">
-    Describe how to install your product or sign up.
+
+  <Step title="Prerequisites">
+    Before you begin, make sure the following are in place on your machine:
+
+    - **Docker Engine** and **Docker Compose** (v2) installed and running. Verify with:
+      ```bash
+      docker --version
+      docker compose version
+      ```
+    - **Port 8082** available for the Traccar web interface and REST API.
+    - **Port 5055** available for the OsmAnd device protocol (used in Step 5 and the tip below). If you are using a different device protocol, substitute the appropriate port — Traccar listens on a separate port per protocol.
+
+    <Note>
+      A full list of supported protocols and their default port numbers is available in the [Traccar protocol documentation](https://www.traccar.org/devices/).
+    </Note>
+  </Step>
+
+  <Step title="Create docker-compose.yml">
+    Create a new project directory and add a `docker-compose.yml` file. This configuration uses the official `traccar/traccar` image with a bind-mounted config file and log directory so your data persists across container restarts.
 
     ```bash
-    npm install your-package
+    mkdir traccar-server && cd traccar-server
+    mkdir -p traccar/conf traccar/logs
     ```
+
+    Create the configuration file that the container will read on startup:
+
+    ```xml
+    <!-- traccar/conf/traccar.xml -->
+    <?xml version="1.0" encoding="UTF-8"?>
+    <!DOCTYPE properties SYSTEM 'http://java.sun.com/dtd/properties.dtd'>
+    <properties>
+
+        <!-- Documentation: https://www.traccar.org/configuration-file/ -->
+
+        <entry key='database.driver'>org.h2.Driver</entry>
+        <entry key='database.url'>jdbc:h2:./data/database</entry>
+        <entry key='database.user'>sa</entry>
+        <entry key='database.password' />
+
+    </properties>
+    ```
+
+    Now create the `docker-compose.yml` file:
+
+    ```yaml
+    services:
+      traccar:
+        image: traccar/traccar:latest
+        container_name: traccar
+        restart: unless-stopped
+        ports:
+          - "8082:8082"   # Web interface and REST API
+          - "5055:5055"   # OsmAnd protocol
+        volumes:
+          - ./traccar/conf/traccar.xml:/opt/traccar/conf/traccar.xml:ro
+          - ./traccar/logs:/opt/traccar/logs
+    ```
+
+    <Note>
+      To expose additional device protocol ports (e.g. Teltonika on 5027, GT06 on 5023), add them to the `ports` list using the same `host:container` format.
+    </Note>
   </Step>
-  <Step title="Configure">
-    Describe any setup or configuration needed before first use.
+
+  <Step title="Start the Server">
+    Launch the Traccar container in detached mode:
 
     ```bash
-    your-cli init
+    docker compose up -d
     ```
-  </Step>
-  <Step title="Run it">
-    Show the first thing a user does to see it working.
+
+    Follow the logs to watch the server initialise. You should see database schema creation messages on first run, followed by protocol listener startup lines:
 
     ```bash
-    your-cli start
+    docker compose logs -f traccar
     ```
+
+    The server is ready when you see output similar to:
+
+    ```
+    INFO: [main] Server started.
+    ```
+
+    Press `Ctrl+C` to stop following the logs — the container continues running in the background.
   </Step>
+
+  <Step title="Open the Web Interface">
+    Open your browser and navigate to:
+
+    ```
+    http://localhost:8082
+    ```
+
+    On first run, Traccar presents a **registration form** to create the initial administrator account. Fill in an email address and password — this account has full admin privileges over the server.
+
+    After registering, you are taken directly to the main map view. The interface shows your device list on the left, a live map in the centre, and a panel for reports and settings on the right.
+
+    <Tip>
+      The first account created on a fresh Traccar instance is automatically granted administrator rights. Subsequent accounts created through the UI are regular users unless explicitly promoted.
+    </Tip>
+  </Step>
+
+  <Step title="Make Your First API Call">
+    Traccar's REST API is available immediately at `http://localhost:8082/api`. All endpoints use the same credentials as the web interface. The API supports **HTTP Basic Authentication** and **API key** authentication.
+
+    Verify your session is working by fetching the current user object:
+
+    ```bash
+    curl -u admin:password http://localhost:8082/api/session
+    ```
+
+    A successful response returns a JSON object with your user details:
+
+    ```json
+    {
+      "id": 1,
+      "name": "admin",
+      "email": "admin@example.com",
+      "administrator": true,
+      ...
+    }
+    ```
+
+    List all devices registered to your account (empty array on a fresh install):
+
+    ```bash
+    curl -u admin:password http://localhost:8082/api/devices
+    ```
+
+    Check server health (no authentication required):
+
+    ```bash
+    curl http://localhost:8082/api/health
+    ```
+
+    The health endpoint returns `OK` as plain text when the server is running correctly.
+
+    <Tip>
+      Install the free **OsmAnd** mobile app ([osmand.net](https://osmand.net)) on your phone and configure it to send positions to `http://<your-server-ip>:5055`. Add your device identifier in Traccar under **Devices → Add** using the same ID. OsmAnd is the quickest way to see a real GPS position appear on your map without any hardware.
+    </Tip>
+  </Step>
+
 </Steps>
 
-<Tip>
-  Give people a way to get help. This could be a link to a support page, a chat with a customer support agent, or a forum for your product.
-
-  Example: Need help? Reach out to us at [support@yourcompany.com](mailto:support@yourcompany.com).
-</Tip>
+<Note>
+  This quickstart uses the embedded H2 database, which is ideal for evaluation but not recommended for production workloads. For a production deployment with MySQL or PostgreSQL, see the full [Docker deployment guide](/deployment/docker).
+</Note>
